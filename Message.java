@@ -33,7 +33,7 @@ public class Message {
     private String receiver;
     private LocalDateTime timestamp;
     private int size = 0;
-    private int sessionID = -1;
+    private String sessionID = "";
     private String body;
 
     /**
@@ -111,20 +111,48 @@ public class Message {
         // OPTIONAL HEADERS:
         if (headers.length > NUM_REQUIRED_HEADERS) {
             // SESSION ID
-            int headerPos = headers[NUM_REQUIRED_HEADERS].indexOf(": ");
-            if (headerPos > 0) {
-                String header = headers[NUM_REQUIRED_HEADERS].substring(0, headerPos);
-                if (header.equals("SessionID")) {
+            //int headerPos = headers[NUM_REQUIRED_HEADERS].indexOf(": ");
+            String opHeaders = headers[NUM_REQUIRED_HEADERS];
+            int seshStart = opHeaders.indexOf("SessionID: ");
+            if (seshStart != -1) {
+                //String header = headers[NUM_REQUIRED_HEADERS].substring(0, headerPos);
+                int valStart = seshStart + "SessionID: ".length();
+                int seshEnd = opHeaders.indexOf(HEADER_SEPERATOR, valStart);
+                
+                if(seshEnd != -1) {
+                    seshEnd = opHeaders.indexOf("Body: ", valStart);
+                }
+
+                if(seshEnd != -1) {
+                    sessionID = opHeaders.substring(valStart, seshEnd).trim();
+                } else {
+                    sessionID = opHeaders.substring(valStart).trim();
+                }
+                
+                if(size > 0) {
+                    int bodyStart = opHeaders.indexOf("Body: ");
+
+                    if(bodyStart != -1) {
+                        body = opHeaders.substring(bodyStart + "Body: ".length());
+                    } else {
+                        throw new InvalidMessageFormat("Body missing");
+                    }
+                }
+                /**if (header.equals("SessionID")) {
                     // If end of session ID found
                     if (header.indexOf(HEADER_SEPERATOR) > 0) {
                         sessionID = Integer.parseInt(header.substring(0, header.indexOf(HEADER_SEPERATOR)));
                     } 
                     else { throw new InvalidMessageFormat("Missing SessionID end.");  }   
-                }
+                }*/
             } 
-        } 
+        } else {
+            if(size > 0) {
+                throw new InvalidMessageFormat("No optional headers found");
+            }
+        }
         // BODY
-        if (size > 0) {
+        /**if (size > 0) {
             // If optional header exists
             if (headers.length > NUM_REQUIRED_HEADERS) {
                 int headerPos = headers[NUM_REQUIRED_HEADERS].indexOf("Body: ");
@@ -135,14 +163,14 @@ public class Message {
                 else { throw new InvalidMessageFormat("Missing Body header.");  }
             } else { throw new InvalidMessageFormat("Missing Body header.");  }
                
-        }
+        }*/
     }
 
     /**
      * Sets the sessionID to the given values.
      * @param sessionID
      */
-    public void setSessionID (int sessionID) {
+    public void setSessionID (String sessionID) {
         this.sessionID = sessionID;
     }
 
@@ -157,7 +185,7 @@ public class Message {
             "Timestamp: " + timestamp + HEADER_SEPERATOR +
             "Size: " + size + HEADER_SEPERATOR;
 
-            if (sessionID > 0) {
+            if (!sessionID.isEmpty()) {
                 message += "SessionID: " + sessionID + HEADER_SEPERATOR;
             }
 
@@ -203,7 +231,7 @@ public class Message {
      * -1 if sessionID doesn't exist.
      * @return SessionID
      */
-    public int getSessionID() { return sessionID; }
+    public String getSessionID() { return sessionID; }
 
     /**
      * Returns the message body of the message.

@@ -30,6 +30,7 @@ public class Server {
             keyhand.createKeyPair();
         } catch (Exception e) {
             System.out.println("Error: Unable to create key pair! " + e);
+            e.printStackTrace();
             return;
         }
         
@@ -57,6 +58,7 @@ public class Server {
             }
         } catch(IOException e) {
             System.err.println("Exception: " + e.getMessage());
+            e.printStackTrace();
         } finally {
             System.out.println("Server terminated");
         }

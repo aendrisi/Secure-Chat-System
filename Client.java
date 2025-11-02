@@ -23,7 +23,7 @@ public class Client {
     private static String serverHost = "localhost";
     private static int serverPort = 1025; 
     private static String hostName;
-    private static int uid;
+    private static String uid;
     private static SecretKey sessionKey;
 
 
@@ -73,7 +73,34 @@ public class Client {
             String sendingMessage;
 
             // STAGE 1: Registration
-            // ...
+            try {
+                uid = keyhand.getUID(hostName);
+                if(uid == null) {
+                    uid = java.util.UUID.randomUUID().toString();
+                    System.out.println("Generated new uid" + uid);
+                } else {
+                    System.out.println("Using existing uid" + uid);
+                }
+
+                keyhand.setUID(uid);
+                String pubKey = Base64.getEncoder().encodeToString(keyhand.getKeyPair().getPublic().getEncoded());
+                String msgBody = "UID=" + uid + " | PublicKey=" + pubKey;
+                String regMessage = messagerToRelay.encodeMessage(
+                    Opcode.REGI,
+                    hostName,
+                    RELAY_NAME,
+                    msgBody
+                );
+
+                out.println(regMessage);
+
+            } catch(Exception e) {
+                System.out.println("UID registration failed" + e.getMessage());
+                scan.close();
+                return;
+            }
+
+
             // STAGE 2.1: Authentication and Session Setup with RELAY
             // ...
 
@@ -148,7 +175,7 @@ public class Client {
                 
                 // Convert secret key
                 sessionKey = new SecretKeySpec(sharedSecretBytes, 0, sharedSecretBytes.length, "AES");
-                uid = 5; // TEST: should be given by the Relay
+                //uid = 5; // TEST: should be given by the Relay
 
                 messagerToClient.setSession(sessionKey, uid);
             } catch (Exception e) {} 

@@ -4,7 +4,12 @@
  * Handles publishing and reading public key data 
  */
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.security.KeyFactory;
 import java.security.KeyPair;
@@ -64,12 +69,14 @@ public class KeyHandler {
         }
 
         // Write to file
-        try {
+        /**try {
             Files.write(keyFile.toPath(), kp.getPublic().getEncoded());
         } catch (Exception e) {
             System.out.println("Error: Unable to publish public key! " + e);
             throw e;
-        }
+        } */
+
+        
     }
 
     // Returns the key pair
@@ -98,7 +105,7 @@ public class KeyHandler {
     // Returns the public key of the given user
     // (null if user not found)
     public PublicKey getUserPublicKey(String user) {
-        File userFile = new File(PUBLIC_KEY_DIR + "/" + user + ".txt");
+        /**File userFile = new File(PUBLIC_KEY_DIR + "/" + user + ".txt");
         if (userFile.exists() && userFile.isFile()) {
             try {
                 byte[] byteKey = Files.readAllBytes(userFile.toPath());
@@ -110,6 +117,59 @@ public class KeyHandler {
                 System.out.println("Error: Unable to read from public key file! " + e);
             } 
         }
+        return null;*/
+
+        File userFile = new File(PUBLIC_KEY_DIR + "/" + user + ".txt");
+        if (userFile.exists() && userFile.isFile()) {
+            try(FileInputStream fs = new FileInputStream(userFile); BufferedReader reader = new BufferedReader(new InputStreamReader(fs))){
+                String uidLine = reader.readLine();
+                if(uidLine == null) return null;
+
+                byte[] byteKey = fs.readAllBytes();
+                X509EncodedKeySpec X509publicKey = new X509EncodedKeySpec(byteKey);
+                KeyFactory kf = KeyFactory.getInstance("RSA");
+                return kf.generatePublic(X509publicKey);
+            } catch (Exception e) {
+                System.out.println("Error: Unable to read from public key file! " + e);
+            } 
+        }
+        return null;
+    }
+
+    public void setUID(String uid) throws Exception{
+        if(hostname == null | keyFile == null) {
+            System.out.println("No UID or File");
+            throw new IllegalStateException("User needs to be set");
+        }
+
+        String uidLine = uid + System.lineSeparator();
+        byte[] publicKeyByte = (kp != null) ? kp.getPublic().getEncoded() : new byte[0];
+
+        try(FileOutputStream fs = new FileOutputStream(keyFile)) {
+            fs.write(uidLine.getBytes());
+            fs.write(publicKeyByte);
+
+        } catch(Exception e) {
+            System.out.println("UID or Public Key issue");
+            throw e;
+        }
+
+    }
+
+    public String getUID(String user) {
+        File uFile = new File(PUBLIC_KEY_DIR + "/" + user + ".txt");
+        if(uFile.exists() && uFile.isFile()) {
+            try {
+                List<String> lines = Files.readAllLines(uFile.toPath());  
+                
+                if(!lines.isEmpty()) {
+                    return lines.get(0).trim();
+                }
+                } catch(IOException e) {
+                    System.out.println("Error: Unable to read UID " + e);
+                }
+        }
+
         return null;
     }
 

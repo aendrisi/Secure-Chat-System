@@ -26,7 +26,7 @@ public class MessageManager {
 
     private boolean sessionMode = false; //If a session is active
     private SecretKey sessionKey;
-    private int sessionID;
+    private String sessionID;
     private LocalDateTime sessionExpiretime;
 
     /**
@@ -72,7 +72,7 @@ public class MessageManager {
      * @param sessionID Identifier for current session 
      * @param expiry The expiry time for the session
      */
-    public void setSession(SecretKey sessionKey, int sessionID, LocalDateTime expiry) {
+    public void setSession(SecretKey sessionKey, String sessionID, LocalDateTime expiry) {
         sessionMode = true;
         this.sessionKey = sessionKey;
         this.sessionID = sessionID;
@@ -85,7 +85,7 @@ public class MessageManager {
      * @param sessionKey Session key
      * @param sessionID Identifier for current session
      */
-    public LocalDateTime setSession(SecretKey sessionKey, int sessionID) {
+    public LocalDateTime setSession(SecretKey sessionKey, String sessionID) {
         sessionMode = true;
         this.sessionKey = sessionKey;
         this.sessionID = sessionID;
