@@ -70,17 +70,21 @@ public class Client {
             String encodedPublicKey = Base64.getEncoder().encodeToString(kp.getPublic().getEncoded());
             System.out.println("REGISTRATION STAGE");
 
+            //create registration message 
             String regMessage = messagerToRelay.encodeMessage(
                 Opcode.REGI,
                 encodedPublicKey
             );
+
             out.println(regMessage);
             String serverResponse = in.readLine();
             
             if(serverResponse != null) {
+                //Get the UID from server
                 String trimmedResponse = serverResponse.trim();
                 if(trimmedResponse.startsWith("UID:")) {
-                    try {
+                    try {  
+                        //store the uid
                         uid = Integer.parseInt(trimmedResponse.substring(4).trim());
                         System.out.println("Registration successful. Received UID: " + uid);
                     } catch(NumberFormatException e) {

@@ -84,22 +84,23 @@ public class Server {
         }
     }
 
-    //register client
+    //register client and add uid
     public static int registerClient(String hostname, String encodedPublicKey) throws Exception {
         byte[] byteKey = Base64.getDecoder().decode(encodedPublicKey);
         X509EncodedKeySpec X509publicKey = new X509EncodedKeySpec(byteKey);
         KeyFactory kf = KeyFactory.getInstance("RSA");
         PublicKey publicKey = kf.generatePublic(X509publicKey);
-
         Integer existingUid = hostUIDMap.get(hostname);
+        
+        //if uid exists, just return the existing one
         if (existingUid != null) {
             uidKeyMap.put(existingUid, publicKey);
             System.out.println(hostname + " UID found: " + existingUid);
             return existingUid;
         }
 
+        //otherwise create a 5 digit new uid and return 
         int newUid;
-
         do {
             newUid = 10000 + random.nextInt(90000); // 5 numbers
         } while (uidKeyMap.containsKey(newUid));
