@@ -8,8 +8,6 @@ import java.io.*;
 import java.util.concurrent.*;
 import javax.crypto.SecretKey;
 
-import org.omg.CORBA.UnknownUserException;
-
 import java.net.*;
 import java.security.PrivateKey;
 import java.security.PublicKey;
@@ -37,10 +35,10 @@ public class MessageManager {
      * @param source Source's name
      * @param srcPrivKey Source's private key 
      * @param destination Destination's name
-     * @throws UnknownUserException Destination's public key could not be found.
+     * @throws UnknownUser Destination's public key could not be found.
      */
     public MessageManager(String source, PrivateKey srcPrivKey, String destination) 
-        throws UnknownUserException
+        throws UnknownUser
     {
         this.source =  source;
         this.destination =  destination;
@@ -261,6 +259,19 @@ class CannotVerifyIntegrity extends Exception {
      * @param m Display message
      */
     public CannotVerifyIntegrity(String m) {
+        super(m);
+    }
+}
+
+/**
+ * Exception if user's public keys cannot be found.
+ */
+class UnknownUser extends Exception {
+    public UnknownUser() {
+        super();
+    }
+
+    public UnknownUser(String m) {
         super(m);
     }
 }

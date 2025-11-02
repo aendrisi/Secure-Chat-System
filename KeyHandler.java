@@ -26,8 +26,6 @@ import javax.crypto.spec.SecretKeySpec;
 
 import javax.crypto.KeyAgreement;
 
-import org.omg.CORBA.UnknownUserException;
-
 public class KeyHandler {
     private final static String PUBLIC_KEY_DIR = "PublicKeys";
     private final static String RELAY_NAME = "Relay";
@@ -99,10 +97,10 @@ public class KeyHandler {
      * Searches for the given user's public key and returns either the key or an
      * exception.
      * @param username User to search for
-     * @return User's public key OR UnknownUserException
-     * @throws UnknownUserException User's public key could not be found
+     * @return User's public key OR UnknownUser
+     * @throws UnknownUser User's public key could not be found
      */
-    public static PublicKey findPublicKey (String username) throws UnknownUserException {
+    public static PublicKey findPublicKey (String username) throws UnknownUser {
         File userFile = new File(PUBLIC_KEY_DIR + "/" + username + ".txt");
 
         if (userFile.exists() && userFile.isFile()) {
@@ -116,7 +114,7 @@ public class KeyHandler {
                 System.out.println("Error: Unable to read from public key file! " + e);
             } 
         } 
-        throw new UnknownUserException();
+        throw new UnknownUser();
     }
     
     /**

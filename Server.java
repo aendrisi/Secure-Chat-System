@@ -12,8 +12,6 @@ import java.util.concurrent.*;
 
 import javax.crypto.SecretKey;
 
-import org.omg.CORBA.UnknownUserException;
-
 import java.net.*;
 import java.security.KeyFactory;
 import java.security.KeyPair;
@@ -151,7 +149,7 @@ public class Server {
         private PublicKey clientKey;
         private SecretKey sessionKey;
 
-        public ClientHandler(Socket socket, String clientID, KeyPair keys) throws UnknownUserException {
+        public ClientHandler(Socket socket, String clientID, KeyPair keys) throws UnknownUser {
             this.clientSocket = socket;
             this.clientID = clientID;
             this.relayKeys = keys;
