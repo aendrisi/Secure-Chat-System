@@ -15,6 +15,7 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
 
 import java.net.*;
+import java.security.MessageDigest;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.SecureRandom;
@@ -243,7 +244,7 @@ public class MessageManager {
             //Encode HMAC
             String encodedHMAC = Base64.getEncoder().encodeToString(hmacBytes);
 
-            return encodedHMAC;
+            return plainBytes + "||" + encodedHMAC;
         } catch (Exception e) {
             System.out.println("HMAC Failed: " + e.getMessage());
             return null;
@@ -280,8 +281,13 @@ public class MessageManager {
             byte[] encData = Base64.getDecoder().decode(cipherVals[0]);
             byte[] digSig = Base64.getDecoder().decode(cipherVals[1]);
 
+            boolean validKeyedHash = true; //fix later
+            if (!validKeyedHash) { throw new CannotVerifyIntegrity(); }
+            return "plaintext";
             // Decrypt with receiver's public key????
             //but i dont have receiver private key here???
+        } catch(CannotVerifyIntegrity | InvalidMessageFormat e) {
+            throw new CannotVerifyIntegrity("RSA decode fail");
         }
     }
 
@@ -299,10 +305,26 @@ public class MessageManager {
         // Key-Hash: HMAC (session key)
 
         // Verify integrity
-        boolean validKeyedHash = false;
-        if (!validKeyedHash) { throw new CannotVerifyIntegrity(); }
+        //boolean validKeyedHash = false;
+        //if (!validKeyedHash) { throw new CannotVerifyIntegrity(); }
 
-        return plaintext;
+        //return plaintext;
+
+        try {
+            String[] hmacVals = ciphertext.split(java.util.regex.Pattern.quote("||"), 2);
+            //Calculate HMAC and compare plaintext calc for integrity
+            byte[] hmacBytes = Base64.getDecoder().decode(hmacVals[1]);
+            Mac verMac = Mac.getInstance("HmacSHA256");
+            byte[] verHMACBytes = verMac.doFinal(hmacVals[0].getBytes());
+
+            if(!MessageDigest.isEqual(hmacBytes, verHMACBytes)) {
+                throw new CannotVerifyIntegrity("HMAC validation failed");
+            }
+            
+            return "";
+        } catch(Exception e) {
+            throw new CannotVerifyIntegrity("HMAC verification failed");
+        }
     }
 
     /**
