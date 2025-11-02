@@ -5,6 +5,7 @@
  */
 
 import java.io.*;
+import java.util.HashMap;
 import java.util.concurrent.*;
 import javax.crypto.SecretKey;
 
@@ -18,6 +19,8 @@ import java.time.LocalDateTime;
  */
 public class MessageManager {
     private final int SESSION_DURATION_MINS = 15;
+    private static final String BODY_SEPERATOR = "###";
+    private static final String VALUE_SEPERATOR = ": ";
 
     private String source;
     private String destination;
@@ -240,6 +243,46 @@ public class MessageManager {
         if (!validKeyedHash) { throw new CannotVerifyIntegrity(); }
 
         return plaintext;
+    }
+
+    /**
+     * Creates a message body from a given list of header-value pairs.
+     * @param list
+     * @return
+     */
+    public static String createListBody(HashMap<String, String> list){
+        String body = "";
+        if (list.isEmpty()) { return body; }
+
+        for (String header : list.keySet()) {
+            body += header + VALUE_SEPERATOR + list.get(header) + BODY_SEPERATOR;
+        }
+        return body.substring(0, body.length() - BODY_SEPERATOR.length());
+    }
+
+    /**
+     * Returns a hashmap from a given message body list
+     * @param body
+     * @return
+     * @throws Exception
+     */
+    public static HashMap<String, String> readListBody(String body) throws Exception{
+        HashMap<String, String> list = new HashMap<>();
+        String[] sections = body.split(BODY_SEPERATOR);
+
+        for (String line : sections) {
+            String[] values = line.split(VALUE_SEPERATOR);
+            list.put(values[0], values[1]);
+        }
+        return list;
+    }
+
+    public String getDestination() {
+        return destination;
+    }
+
+    public String getSource() {
+        return source;
     }
 }
 

@@ -18,6 +18,7 @@ import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.SecureRandom;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.*;
 import javax.crypto.KeyAgreement;
@@ -30,6 +31,7 @@ public class KeyHandler {
     private final static String PUBLIC_KEY_DIR = "PublicKeys";
     private final static String RELAY_NAME = "Relay";
     private final static int KEY_SIZE = 1024;
+    private final static int CHALLENGE_BOUND = 2048;
 
     /**
      * Creates and publishes a public and private key pair for the given user.
@@ -146,126 +148,12 @@ public class KeyHandler {
         return new SecretKeySpec(sharedSecretBytes, 0, sharedSecretBytes.length, "AES");
     }
 
-    /* 
-    // Returns the public key of the given user
-    // (null if user not found)
-    public PublicKey getUserPublicKey(String user) {
-        /**File userFile = new File(PUBLIC_KEY_DIR + "/" + user + ".txt");
-        if (userFile.exists() && userFile.isFile()) {
-            try {
-                byte[] byteKey = Files.readAllBytes(userFile.toPath());
-                X509EncodedKeySpec X509publicKey = new X509EncodedKeySpec(byteKey);
-                KeyFactory kf = KeyFactory.getInstance("RSA");
-
-                return kf.generatePublic(X509publicKey);
-            } catch (Exception e) {
-                System.out.println("Error: Unable to read from public key file! " + e);
-            } 
-        }
-        return null;
-
-        File userFile = new File(PUBLIC_KEY_DIR + "/" + user + ".txt");
-        if (userFile.exists() && userFile.isFile()) {
-            try(FileInputStream fs = new FileInputStream(userFile); BufferedReader reader = new BufferedReader(new InputStreamReader(fs))){
-                String uidLine = reader.readLine();
-                if(uidLine == null) return null;
-
-                byte[] byteKey = fs.readAllBytes();
-                X509EncodedKeySpec X509publicKey = new X509EncodedKeySpec(byteKey);
-                KeyFactory kf = KeyFactory.getInstance("RSA");
-                return kf.generatePublic(X509publicKey);
-            } catch (Exception e) {
-                System.out.println("Error: Unable to read from public key file! " + e);
-            } 
-        }
-        return null;
-    } */
-
-    /* 
-    public void setUID(String uid) throws Exception{
-        if(hostname == null | keyFile == null) {
-            System.out.println("No UID or File");
-            throw new IllegalStateException("User needs to be set");
-        }
-
-        String uidLine = uid + System.lineSeparator();
-        byte[] publicKeyByte = (kp != null) ? kp.getPublic().getEncoded() : new byte[0];
-
-        try(FileOutputStream fs = new FileOutputStream(keyFile)) {
-            fs.write(uidLine.getBytes());
-            fs.write(publicKeyByte);
-
-        } catch(Exception e) {
-            System.out.println("UID or Public Key issue");
-            throw e;
-        }
-
-    } */
-
-    /* 
-    public String getUID(String user) {
-        File uFile = new File(PUBLIC_KEY_DIR + "/" + user + ".txt");
-        if(uFile.exists() && uFile.isFile()) {
-            try {
-                List<String> lines = Files.readAllLines(uFile.toPath());  
-                
-                if(!lines.isEmpty()) {
-                    return lines.get(0).trim();
-                }
-                } catch(IOException e) {
-                    System.out.println("Error: Unable to read UID " + e);
-                }
-        }
-
-        return null;
-    } */
-
-     /*// Creates a file to store the user's public key
-    // Result = false indicates file already exists
-    public boolean setUser(String hostname) throws Exception {
-        keyFile = new File(PUBLIC_KEY_DIR + "/" + hostname + ".txt");
-        this.hostname = hostname;
-
-        // Check if file already exists
-        if (keyFile.exists() && keyFile.isFile()){
-            return false;
-        }
-        else {
-            // Open file
-            keyFile.createNewFile();
-            return true;
-        }
-    } */
-
-    // Creates a public private key pair and publishes it
-    /*public void createKeyPair() throws Exception {
-        if (hostname == null) {
-            System.out.println("Error: No username! ");
-            throw new UnknownUser();
-        }
-
-        // Generate key pair
-        try {
-            KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
-            kpg.initialize(1024); 
-            kp = kpg.generateKeyPair();
-        } catch (Exception e) {
-            System.out.println("Error: Unable to create key pair! " + e);
-            throw e;
-        }
-
-        // Write to file
-        /**try {
-            Files.write(keyFile.toPath(), kp.getPublic().getEncoded());
-        } catch (Exception e) {
-            System.out.println("Error: Unable to publish public key! " + e);
-            throw e;
-        } */
-    //} */
-
-    // Returns the key pair
-    /*public KeyPair getKeyPair() {
-        return kp;
-    } */
+    /**
+     * Creates and returns a challenge value.
+     */
+    public static int createChallenge() {
+        SecureRandom rand = new SecureRandom();
+        return rand.nextInt(CHALLENGE_BOUND);
+    }
 
 }
