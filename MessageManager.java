@@ -10,11 +10,14 @@ import java.util.HashMap;
 import java.util.concurrent.*;
 
 import javax.crypto.Cipher;
+import javax.crypto.Mac;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.IvParameterSpec;
 
 import java.net.*;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.SecureRandom;
 import java.security.Signature;
 import java.time.LocalDateTime;
 
@@ -190,7 +193,7 @@ public class MessageManager {
      * @return Ciphertext
      */
     private String encryptHashRSA (String plaintext) {
-        String ciphertext = plaintext;
+        //String ciphertext = plaintext;
         // Encryption: RSA (dest's public key)
         // Key-Hash: Digital Signature (sender's private key)
         try {
@@ -225,10 +228,26 @@ public class MessageManager {
      * @return Ciphertext
      */
     private String encryptHashSession (String plaintext) {
-        String ciphertext = plaintext;
+        //String ciphertext = plaintext;
         // Encryption: Secret Key (session key)
         // Key-Hash: HMAC (session key)
-        return ciphertext;
+        //return ciphertext;
+
+        try {
+            //Convert to bytes and encrypt  
+            byte[] plainBytes = plaintext.getBytes();
+            //HMAC calculation
+            Mac hashMAC = Mac.getInstance("HmacSHA256");
+            hashMAC.init(sessionKey);
+            byte[] hmacBytes = hashMAC.doFinal(plainBytes);
+            //Encode HMAC
+            String encodedHMAC = Base64.getEncoder().encodeToString(hmacBytes);
+
+            return encodedHMAC;
+        } catch (Exception e) {
+            System.out.println("HMAC Failed: " + e.getMessage());
+            return null;
+        }   
     }
 
     //%%% INCOMPLETE %%%//
