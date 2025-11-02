@@ -22,6 +22,7 @@ import java.security.SecureRandom;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.*;
 import javax.crypto.KeyAgreement;
+import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
@@ -154,6 +155,12 @@ public class KeyHandler {
     public static int createChallenge() {
         SecureRandom rand = new SecureRandom();
         return rand.nextInt(CHALLENGE_BOUND);
+    }
+
+    public static SecretKey createAESSecretKey() throws NoSuchAlgorithmException {
+        KeyGenerator generator = KeyGenerator.getInstance("AES");
+        generator.init(128); // The AES key size in number of bits
+        return generator.generateKey();
     }
 
 }

@@ -41,6 +41,8 @@ public class MessageManager {
     private String sessionID;
     private LocalDateTime sessionExpiretime;
 
+    private SecureRandom rand;
+
     /**
      * Creates a MessageManager with an unknown destination public key.
      * @param source Source's name
@@ -56,6 +58,7 @@ public class MessageManager {
         this.srcPrivKey = srcPrivKey;
 
         destPubKey = KeyHandler.findPublicKey(destination);
+        rand = new SecureRandom();
     }
 
     /**
@@ -70,6 +73,7 @@ public class MessageManager {
         this.destination =  destination;
         this.srcPrivKey = srcPrivKey;
         this.destPubKey = destPubKey;
+        rand = new SecureRandom();
     }
     
     /**
@@ -205,17 +209,27 @@ public class MessageManager {
             byte[] digSig = rsaSig.sign();
 
             // Encrypt message with receiver pub key
+            SecretKey secKey = KeyHandler.createAESSecretKey();
+
+            // Encrypt using AES on symmetric key
+            Cipher aesCip = Cipher.getInstance("AES/CBC/PKCS5Padding");
+            aesCip.init(Cipher.ENCRYPT_MODE, secKey);
+            byte[] encData = aesCip.doFinal(plaintext.getBytes());
+
+            // Encrypt key using RSA public key
             Cipher rsaCip = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-            rsaCip.init(Cipher.ENCRYPT_MODE, destPubKey);
-            byte[] encData = rsaCip.doFinal(plaintext.getBytes());
+            rsaCip.init(Cipher.PUBLIC_KEY, destPubKey);
+            byte[] encKey = rsaCip.doFinal(secKey.getEncoded());
 
             // Encode the signature and messages then return the combined RSA
             String encSig = Base64.getEncoder().encodeToString(digSig);
             String encDataString = Base64.getEncoder().encodeToString(encData);
+            String encKeyString = Base64.getEncoder().encodeToString(encKey);
 
-            return encDataString + "||" + encSig;
+            return encDataString + "||" + encKeyString + "||" + encSig;
         } catch(Exception e) {
             System.out.println("RSA encryption failed: " + e.getMessage());
+            e.printStackTrace();
             return "";
         }
 

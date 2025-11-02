@@ -148,7 +148,6 @@ public class Client {
                 e.printStackTrace();
             }
             
-
             // ...
             //System.out.println("Skipping STAGE 2.1");
             // Stage 2.15: CHOSING A CLIENT!
@@ -288,6 +287,13 @@ public class Client {
         return new MessageManager(hostName, kp.getPrivate(), target, targetKey);
     }
 
+    /**
+     * STAGE 2.1: Authenticate session setup with relay. 
+     * @param socket
+     * @param out
+     * @param in
+     * @throws Exception
+     */
     private static void AuthSessiontoRelay (Socket socket, PrintWriter out, BufferedReader in) throws Exception{
         if (socket.isConnected()) {
             String msgString;
