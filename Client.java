@@ -174,15 +174,15 @@ public class Client {
                 );
 
                 // TESTING ...........................
-                System.out.println("---- INNER ----\n" + 
-                                    innerMessage +
-                                    "\n---- INNER ----\n");
+                /**System.out.println("---- INNER ----\n" + 
+                                    sendingMessage +
+                                    "\n---- INNER ----\n");*/
                 try {
                     //Message testMess = messagerToRelay.decodeMessage(test);
                     //test = testMess.toString();
-                    System.out.println("---- OUTER ----\n" + 
+                    /**System.out.println("---- OUTER ----\n" + 
                                         outerMessage +
-                                        "\n---- OUTER ----\n");
+                                        "\n---- OUTER ----\n");*/
                 } catch (Exception e) {
                     System.out.println("ERROR: " + e);
                 } 

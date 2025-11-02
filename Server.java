@@ -168,7 +168,15 @@ public class Server {
 
         public void sendClientMessage(String msg) {
         if(out != null) {
-            out.println(msg);
+            String[] parts = msg.split("Opcode: ");
+            if (parts.length > 1) {
+                //String opcode = parts[1].split(" ")[0];
+                String[] msgbody = msg.split("Body: ");
+                String body = msgbody[1].trim();
+                out.println(body);
+            } else { 
+                out.println(msg);
+            }
         }
     }
     }
