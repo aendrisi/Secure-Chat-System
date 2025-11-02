@@ -96,6 +96,7 @@ public class Client {
                     if (uidResponse.getOpcode() == Opcode.REGI) {
                         String uidBody = uidResponse.getBody().trim();
 
+                        //get the UID
                         uid = Integer.parseInt(uidBody);
                         System.out.println(uidResponse);
                         System.out.println("Registration successful. UID: " + uid);
@@ -125,6 +126,7 @@ public class Client {
                 return;
             }
 
+            //continue the buffer
             try {
                 if(in.ready()) {
                     while (in.ready()) {

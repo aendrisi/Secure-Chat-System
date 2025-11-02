@@ -5,13 +5,17 @@
  */
 
 import java.io.*;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.concurrent.*;
+
+import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 
 import java.net.*;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.Signature;
 import java.time.LocalDateTime;
 
 /**
@@ -189,7 +193,29 @@ public class MessageManager {
         String ciphertext = plaintext;
         // Encryption: RSA (dest's public key)
         // Key-Hash: Digital Signature (sender's private key)
-        return ciphertext;
+        try {
+            // Digitally sign with sender priv key 
+            Signature rsaSig = Signature.getInstance("SHA256withRSA");
+            rsaSig.initSign(srcPrivKey);
+            rsaSig.update(plaintext.getBytes());
+            byte[] digSig = rsaSig.sign();
+
+            // Encrypt message with receiver pub key
+            Cipher rsaCip = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+            rsaCip.init(Cipher.ENCRYPT_MODE, destPubKey);
+            byte[] encData = rsaCip.doFinal(plaintext.getBytes());
+
+            // Encode the signature and messages then return the combined RSA
+            String encSig = Base64.getEncoder().encodeToString(digSig);
+            String encDataString = Base64.getEncoder().encodeToString(encData);
+
+            return encDataString + "||" + encSig;
+        } catch(Exception e) {
+            System.out.println("RSA encryption failed: " + e.getMessage());
+            return "";
+        }
+
+        //return ciphertext;
     }
 
     //%%% INCOMPLETE %%%//
@@ -214,15 +240,30 @@ public class MessageManager {
      * @throws CannotVerifyIntegrity Message contents have been altered
      */
     private String decryptHashRSA (String ciphertext) throws CannotVerifyIntegrity {
-        String plaintext = ciphertext;
+        //String plaintext = ciphertext;
         // Decryption: RSA (dest's public key)
         // Key-Hash: Digital Signature (sender's private key)
 
         // Verify integrity
-        boolean validKeyedHash = true; //fix later
-        if (!validKeyedHash) { throw new CannotVerifyIntegrity(); }
+        //boolean validKeyedHash = true; //fix later
+        //if (!validKeyedHash) { throw new CannotVerifyIntegrity(); }
+        //return plaintext;
 
-        return plaintext;
+        try {
+            //split the ciphertext values from the separator
+            String[] cipherVals = ciphertext.split(java.util.regex.Pattern.quote("||"), 2);
+
+            if(cipherVals.length != 2) {
+                throw new InvalidMessageFormat("RSA Ciphertext has issues");
+            }
+
+            // Decode the data and signature
+            byte[] encData = Base64.getDecoder().decode(cipherVals[0]);
+            byte[] digSig = Base64.getDecoder().decode(cipherVals[1]);
+
+            // Decrypt with receiver's public key????
+            //but i dont have receiver private key here???
+        }
     }
 
     //%%% INCOMPLETE %%%//
