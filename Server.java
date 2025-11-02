@@ -10,6 +10,8 @@ import java.util.concurrent.*;
 
 import javax.crypto.SecretKey;
 
+import org.omg.CORBA.UnknownUserException;
+
 import java.net.*;
 import java.security.KeyPair;
 import java.security.PublicKey;
@@ -19,6 +21,7 @@ public class Server {
     //private static String serverHost = "localhost";
     private static int serverPort = 1025;
     private static ConcurrentHashMap<String, ClientHandler> client = new ConcurrentHashMap<>();
+    private static KeyPair kp;
 
     public static void main(String[] args) throws InterruptedException {
         System.out.println("Server is running");
@@ -26,8 +29,7 @@ public class Server {
 
         // Generate Public and Private Keys
         try {
-            keyhand.setUser(RELAY_NAME);
-            keyhand.createKeyPair();
+            kp = KeyHandler.createRSAKeyPair(RELAY_NAME);
         } catch (Exception e) {
             System.out.println("Error: Unable to create key pair! " + e);
             e.printStackTrace();
@@ -38,14 +40,27 @@ public class Server {
             //Alice connects to the server
             System.out.println("A has yet to connect...");
             Socket aSocket = serverSocket.accept();
-            ClientHandler aHandler = new ClientHandler(aSocket, "Alice", keyhand.getKeyPair());
+            ClientHandler aHandler;
+            try {
+               aHandler = new ClientHandler(aSocket, "Alice", kp);
+            } catch (Exception e) {
+                System.out.println("ERROR: Unable to find client Alice's public key!");
+                return;
+            }
+            
             client.put("Alice", aHandler);
             aHandler.start();
 
             //Bob connects to the server
             System.out.println("B  has yet to connect...");
             Socket bSocket = serverSocket.accept();
-            ClientHandler bHandler = new ClientHandler(bSocket, "Bob",  keyhand.getKeyPair());
+            ClientHandler bHandler;
+            try {
+               bHandler = new ClientHandler(bSocket, "Bob", kp);
+            } catch (Exception e) {
+                System.out.println("ERROR: Unable to find client Bob's public key!");
+                return;
+            }
             client.put("Bob", bHandler);
             bHandler.start();
 
@@ -102,19 +117,12 @@ public class Server {
         private PublicKey clientKey;
         private SecretKey sessionKey;
 
-        public ClientHandler(Socket socket, String clientID, KeyPair keys) throws FileNotFoundException{
+        public ClientHandler(Socket socket, String clientID, KeyPair keys) throws UnknownUserException {
             this.clientSocket = socket;
             this.clientID = clientID;
             this.relayKeys = keys;
 
-            // Find client's public key
-            KeyHandler keyhand = new KeyHandler();
-            clientKey = keyhand.getUserPublicKey(clientID);
-
-            // Check if destination public key was found
-            if (clientKey == null) {
-                throw new FileNotFoundException();
-            }
+            clientKey = KeyHandler.findPublicKey(clientID);
         }
 
         public void run() {

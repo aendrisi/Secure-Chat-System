@@ -25,32 +25,20 @@ public class Client {
     private static String hostName;
     private static String uid;
     private static SecretKey sessionKey;
+    private static KeyPair kp;
 
 
     public static void main(String[] args) {
         Scanner scan = new Scanner(System.in);
-        KeyHandler keyhand = new KeyHandler();
 
+        // Get user's name
         System.out.print("Enter your username (no spaces): ");
         hostName = scan.next();
-
         if (scan.hasNextLine()) { scan.nextLine(); } // Clear buffer
-
-
-        //Set user
-        try {
-            if (keyhand.setUser(hostName)) {
-                System.out.println("Welcome " + hostName + "!");
-            } else {
-                System.out.println("Welcome back " + hostName + "!");
-            }
-        } catch (Exception e) {
-            System.out.println("Unable to open file! " + e);
-        }
 
         // Create an RSA key pair
         try {
-            keyhand.createKeyPair();
+            kp = KeyHandler.createRSAKeyPair(hostName);
         } catch (Exception e) {
             System.out.println("Error: Unable to create key pair!");
             scan.close();
@@ -67,13 +55,19 @@ public class Client {
             messageHandler.start(); 
 
             // User to Relay communication: 
-            MessageManager messagerToRelay = new MessageManager(
-                hostName, keyhand.getKeyPair().getPrivate(), RELAY_NAME);
-            
             String sendingMessage;
+            MessageManager messagerToRelay;
+            try {
+                messagerToRelay = new MessageManager(hostName, kp.getPrivate(), RELAY_NAME);
+            } catch (Exception e) {
+                System.out.println("Unable to locate Relay server's public key! " + e);
+                scan.close();
+                KeyHandler.deletePublicKey(hostName);
+                return;
+            }
 
             // STAGE 1: Registration
-            try {
+           /*try {
                 uid = keyhand.getUID(hostName);
                 if(uid == null) {
                     uid = java.util.UUID.randomUUID().toString();
@@ -83,7 +77,7 @@ public class Client {
                 }
 
                 keyhand.setUID(uid);
-                String pubKey = Base64.getEncoder().encodeToString(keyhand.getKeyPair().getPublic().getEncoded());
+                String pubKey = Base64.getEncoder().encodeToString(kp.getPublic().getEncoded());
                 String msgBody = "UID=" + uid + " | PublicKey=" + pubKey;
                 String regMessage = messagerToRelay.encodeMessage(
                     Opcode.REGI,
@@ -98,7 +92,7 @@ public class Client {
                 System.out.println("UID registration failed" + e.getMessage());
                 scan.close();
                 return;
-            }
+            } */
 
 
             // STAGE 2.1: Authentication and Session Setup with RELAY
@@ -111,24 +105,25 @@ public class Client {
 
             // Select destination
             do {
-                // Users found
-                List<String> users = keyhand.getAvailableUsers();
+                List<String> users = KeyHandler.getAvailableUsers();
+                users.remove(hostName);
                 if (!users.isEmpty()) {
+                    // Display users
                     System.out.println("Who do you want to talk to?");
                     for (String user : users) {
                         System.out.println(user);
                     }
+                    // Choose a destination
                     System.out.print("Choose (case sensitive): ");
                     target = scan.next();
                     if (scan.hasNextLine()) { scan.nextLine(); } // Clear buffer
 
                     // Verify chosen user
-                    targetKey = keyhand.getUserPublicKey(target);
-                    if (targetKey == null) {
-                        System.out.println("Dunno who that is.");
-                        success = false;
-                    } else {
+                    try {
+                        targetKey = KeyHandler.findPublicKey(target);
                         success = true;
+                    } catch (Exception e) {
+                        System.out.println("Dunno who that is.");
                     }
                 } 
                 // No users found
@@ -144,6 +139,7 @@ public class Client {
                         // End program
                         System.out.println("See ya!");
                         scan.close();
+                        KeyHandler.deletePublicKey(hostName);
                         return;
                     }
                 }
@@ -151,7 +147,7 @@ public class Client {
 
             // User to target client 
             MessageManager messagerToClient = new MessageManager(
-                    hostName, keyhand.getKeyPair().getPrivate(), 
+                    hostName, kp.getPrivate(), 
                     target, targetKey);
             
             // STAGE 2.2: Authentication and Session Setup with CLIENT
@@ -177,7 +173,7 @@ public class Client {
                 sessionKey = new SecretKeySpec(sharedSecretBytes, 0, sharedSecretBytes.length, "AES");
                 //uid = 5; // TEST: should be given by the Relay
 
-                messagerToClient.setSession(sessionKey, uid);
+                messagerToClient.setSession(sessionKey, "TEMP_SESSIONID");
             } catch (Exception e) {} 
             
 
@@ -201,18 +197,12 @@ public class Client {
                 );
 
                 // TESTING ...........................
-                /**System.out.println("---- INNER ----\n" + 
-                                    sendingMessage +
-                                    "\n---- INNER ----\n");*/
-                try {
-                    //Message testMess = messagerToRelay.decodeMessage(test);
-                    //test = testMess.toString();
-                    /**System.out.println("---- OUTER ----\n" + 
-                                        outerMessage +
-                                        "\n---- OUTER ----\n");*/
-                } catch (Exception e) {
-                    System.out.println("ERROR: " + e);
-                } 
+                /*System.out.println("---- INNER ----\n" + 
+                                    innerMessage +
+                                    "\n---- INNER ----\n");
+                System.out.println("---- OUTER ----\n" + 
+                                    outerMessage +
+                                    "\n---- OUTER ----\n"); */
                 // ..................................
 
 

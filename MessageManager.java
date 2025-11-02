@@ -7,6 +7,9 @@
 import java.io.*;
 import java.util.concurrent.*;
 import javax.crypto.SecretKey;
+
+import org.omg.CORBA.UnknownUserException;
+
 import java.net.*;
 import java.security.PrivateKey;
 import java.security.PublicKey;
@@ -34,22 +37,16 @@ public class MessageManager {
      * @param source Source's name
      * @param srcPrivKey Source's private key 
      * @param destination Destination's name
-     * @throws FileNotFoundException Destination's public key could not be found.
+     * @throws UnknownUserException Destination's public key could not be found.
      */
     public MessageManager(String source, PrivateKey srcPrivKey, String destination) 
-        throws FileNotFoundException
+        throws UnknownUserException
     {
         this.source =  source;
         this.destination =  destination;
-
-        KeyHandler keyhand = new KeyHandler();
         this.srcPrivKey = srcPrivKey;
-        destPubKey = keyhand.getUserPublicKey(destination);
-        
-        // Check if destination public key was found
-        if (destPubKey == null) {
-            throw new FileNotFoundException("Destination's public key could not be found.");
-        }
+
+        destPubKey = KeyHandler.findPublicKey(destination);
     }
 
     /**

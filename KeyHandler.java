@@ -18,14 +18,173 @@ import java.security.PublicKey;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.*;
 
-public class KeyHandler {
-    private final String PUBLIC_KEY_DIR = "PublicKeys";
-    private final String RELAY_NAME = "Relay";
-    private String hostname;
-    private File keyFile;
-    private KeyPair kp;
+import org.omg.CORBA.UnknownUserException;
 
-    // Creates a file to store the user's public key
+public class KeyHandler {
+    private final static String PUBLIC_KEY_DIR = "PublicKeys";
+    private final static String RELAY_NAME = "Relay";
+
+    /**
+     * Creates and publishes a public and private key pair for the given user.
+     * @param username Username
+     * @return Public and Private key pair
+     * @throws Exception Unable to create key pair or publish key pair
+     */
+    public static KeyPair createRSAKeyPair(String username) throws Exception {
+        KeyPair kp;
+        // Generate key pair
+        try {
+            KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+            kpg.initialize(1024); 
+            kp = kpg.generateKeyPair();
+        } catch (Exception e) {
+            System.out.println("Error: Unable to create key pair! " + e);
+            throw e;
+        }
+
+        // Write to file
+        try {
+            File keyFile = new File(PUBLIC_KEY_DIR + "/" + username + ".txt");
+            Files.write(keyFile.toPath(), kp.getPublic().getEncoded());
+        } catch (Exception e) {
+            System.out.println("Error: Unable to publish public key! " + e);
+            throw e;
+        } 
+
+        return kp;
+    }
+
+    /**
+     * Deletes the user's public key file. Used for cleaning up public
+     * key files.
+     * @param username Username
+     */
+    public static void deletePublicKey(String username) {
+        File keyFile = new File(PUBLIC_KEY_DIR + "/" + username + ".txt");
+        keyFile.delete();
+    }
+    
+    /**
+     * Returns a list of all available clients based on the public 
+     * key files contained in the directory. 
+     * @return list of all available users
+     */
+    public static List<String> getAvailableUsers() {
+        File directory = new File(PUBLIC_KEY_DIR);
+        File[] files = directory.listFiles();
+        List<String> users = new ArrayList<>();
+
+        // Add names to list
+        if (files != null) {
+            for (File file : files) {
+                String name = file.getName().substring(0, file.getName().length()-4);
+                if (!name.equals(RELAY_NAME)) {
+                    users.add(name);
+                }
+            }
+        }
+        return users;
+    }
+
+    /**
+     * Searches for the given user's public key and returns either the key or an
+     * exception.
+     * @param username User to search for
+     * @return User's public key OR UnknownUserException
+     * @throws UnknownUserException User's public key could not be found
+     */
+    public static PublicKey findPublicKey (String username) throws UnknownUserException {
+        File userFile = new File(PUBLIC_KEY_DIR + "/" + username + ".txt");
+
+        if (userFile.exists() && userFile.isFile()) {
+            try {
+                byte[] byteKey = Files.readAllBytes(userFile.toPath());
+                X509EncodedKeySpec X509publicKey = new X509EncodedKeySpec(byteKey);
+                KeyFactory kf = KeyFactory.getInstance("RSA");
+
+                return kf.generatePublic(X509publicKey);
+            } catch (Exception e) {
+                System.out.println("Error: Unable to read from public key file! " + e);
+            } 
+        } 
+        throw new UnknownUserException();
+    }
+
+    /* 
+    // Returns the public key of the given user
+    // (null if user not found)
+    public PublicKey getUserPublicKey(String user) {
+        /**File userFile = new File(PUBLIC_KEY_DIR + "/" + user + ".txt");
+        if (userFile.exists() && userFile.isFile()) {
+            try {
+                byte[] byteKey = Files.readAllBytes(userFile.toPath());
+                X509EncodedKeySpec X509publicKey = new X509EncodedKeySpec(byteKey);
+                KeyFactory kf = KeyFactory.getInstance("RSA");
+
+                return kf.generatePublic(X509publicKey);
+            } catch (Exception e) {
+                System.out.println("Error: Unable to read from public key file! " + e);
+            } 
+        }
+        return null;
+
+        File userFile = new File(PUBLIC_KEY_DIR + "/" + user + ".txt");
+        if (userFile.exists() && userFile.isFile()) {
+            try(FileInputStream fs = new FileInputStream(userFile); BufferedReader reader = new BufferedReader(new InputStreamReader(fs))){
+                String uidLine = reader.readLine();
+                if(uidLine == null) return null;
+
+                byte[] byteKey = fs.readAllBytes();
+                X509EncodedKeySpec X509publicKey = new X509EncodedKeySpec(byteKey);
+                KeyFactory kf = KeyFactory.getInstance("RSA");
+                return kf.generatePublic(X509publicKey);
+            } catch (Exception e) {
+                System.out.println("Error: Unable to read from public key file! " + e);
+            } 
+        }
+        return null;
+    } */
+
+    /* 
+    public void setUID(String uid) throws Exception{
+        if(hostname == null | keyFile == null) {
+            System.out.println("No UID or File");
+            throw new IllegalStateException("User needs to be set");
+        }
+
+        String uidLine = uid + System.lineSeparator();
+        byte[] publicKeyByte = (kp != null) ? kp.getPublic().getEncoded() : new byte[0];
+
+        try(FileOutputStream fs = new FileOutputStream(keyFile)) {
+            fs.write(uidLine.getBytes());
+            fs.write(publicKeyByte);
+
+        } catch(Exception e) {
+            System.out.println("UID or Public Key issue");
+            throw e;
+        }
+
+    } */
+
+    /* 
+    public String getUID(String user) {
+        File uFile = new File(PUBLIC_KEY_DIR + "/" + user + ".txt");
+        if(uFile.exists() && uFile.isFile()) {
+            try {
+                List<String> lines = Files.readAllLines(uFile.toPath());  
+                
+                if(!lines.isEmpty()) {
+                    return lines.get(0).trim();
+                }
+                } catch(IOException e) {
+                    System.out.println("Error: Unable to read UID " + e);
+                }
+        }
+
+        return null;
+    } */
+
+     /*// Creates a file to store the user's public key
     // Result = false indicates file already exists
     public boolean setUser(String hostname) throws Exception {
         keyFile = new File(PUBLIC_KEY_DIR + "/" + hostname + ".txt");
@@ -40,19 +199,10 @@ public class KeyHandler {
             keyFile.createNewFile();
             return true;
         }
-    }
-
-    // Deletes user file 
-    public boolean deleteUser() {
-        if (hostname != null && keyFile != null) {
-            keyFile.delete();
-            return true;
-        }
-        return false;
-    }
+    } */
 
     // Creates a public private key pair and publishes it
-    public void createKeyPair() throws Exception {
+    /*public void createKeyPair() throws Exception {
         if (hostname == null) {
             System.out.println("Error: No username! ");
             throw new UnknownUser();
@@ -75,109 +225,11 @@ public class KeyHandler {
             System.out.println("Error: Unable to publish public key! " + e);
             throw e;
         } */
-
-        
-    }
+    //} */
 
     // Returns the key pair
-    public KeyPair getKeyPair() {
+    /*public KeyPair getKeyPair() {
         return kp;
-    }
-    
-    // Returns a list of all available users (besides user and relay)
-    public List<String> getAvailableUsers() {
-        File directory = new File(PUBLIC_KEY_DIR);
-        File[] files = directory.listFiles();
-        List<String> users = new ArrayList<>();
+    } */
 
-        // Add names to list
-        if (files != null) {
-            for (File file : files) {
-                String name = file.getName().substring(0, file.getName().length()-4);
-                if (!name.equals(RELAY_NAME) && !name.equals(hostname)) {
-                    users.add(name);
-                }
-            }
-        }
-        return users;
-    }
-
-    // Returns the public key of the given user
-    // (null if user not found)
-    public PublicKey getUserPublicKey(String user) {
-        /**File userFile = new File(PUBLIC_KEY_DIR + "/" + user + ".txt");
-        if (userFile.exists() && userFile.isFile()) {
-            try {
-                byte[] byteKey = Files.readAllBytes(userFile.toPath());
-                X509EncodedKeySpec X509publicKey = new X509EncodedKeySpec(byteKey);
-                KeyFactory kf = KeyFactory.getInstance("RSA");
-
-                return kf.generatePublic(X509publicKey);
-            } catch (Exception e) {
-                System.out.println("Error: Unable to read from public key file! " + e);
-            } 
-        }
-        return null;*/
-
-        File userFile = new File(PUBLIC_KEY_DIR + "/" + user + ".txt");
-        if (userFile.exists() && userFile.isFile()) {
-            try(FileInputStream fs = new FileInputStream(userFile); BufferedReader reader = new BufferedReader(new InputStreamReader(fs))){
-                String uidLine = reader.readLine();
-                if(uidLine == null) return null;
-
-                byte[] byteKey = fs.readAllBytes();
-                X509EncodedKeySpec X509publicKey = new X509EncodedKeySpec(byteKey);
-                KeyFactory kf = KeyFactory.getInstance("RSA");
-                return kf.generatePublic(X509publicKey);
-            } catch (Exception e) {
-                System.out.println("Error: Unable to read from public key file! " + e);
-            } 
-        }
-        return null;
-    }
-
-    public void setUID(String uid) throws Exception{
-        if(hostname == null | keyFile == null) {
-            System.out.println("No UID or File");
-            throw new IllegalStateException("User needs to be set");
-        }
-
-        String uidLine = uid + System.lineSeparator();
-        byte[] publicKeyByte = (kp != null) ? kp.getPublic().getEncoded() : new byte[0];
-
-        try(FileOutputStream fs = new FileOutputStream(keyFile)) {
-            fs.write(uidLine.getBytes());
-            fs.write(publicKeyByte);
-
-        } catch(Exception e) {
-            System.out.println("UID or Public Key issue");
-            throw e;
-        }
-
-    }
-
-    public String getUID(String user) {
-        File uFile = new File(PUBLIC_KEY_DIR + "/" + user + ".txt");
-        if(uFile.exists() && uFile.isFile()) {
-            try {
-                List<String> lines = Files.readAllLines(uFile.toPath());  
-                
-                if(!lines.isEmpty()) {
-                    return lines.get(0).trim();
-                }
-                } catch(IOException e) {
-                    System.out.println("Error: Unable to read UID " + e);
-                }
-        }
-
-        return null;
-    }
-
-}
-
-// Exception for unknown users
-class UnknownUser extends Exception {
-    public UnknownUser() {
-        super();
-    }
 }
