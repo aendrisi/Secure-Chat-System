@@ -170,7 +170,7 @@ public class Server {
                 while ((input = in.readLine()) != null) {
                     System.out.println("Received from " + clientID + ": " + input);
                     
-                    // Decode message
+                    // Encode message
                     try {
                         Message inputMessage = new Message(input);
 
@@ -178,7 +178,14 @@ public class Server {
                             String encodedPublicKey = inputMessage.getBody();
                             int uid = Server.registerClient(clientID, encodedPublicKey);
                             System.out.println("Client " + clientID + " new UID: " + uid);
-                            out.println("UID:" + uid);
+                            //out.println("UID:" + uid);
+                            String uidMessage = relayToClient.encodeMessage(
+                                Opcode.REGI,
+                                String.valueOf(uid)
+                            );
+
+                            out.println(uidMessage);
+                            
                         } else {
                             System.out.println(
                             inputMessage.getSender() + " to " + inputMessage.getReceiver() +
@@ -219,7 +226,7 @@ public class Server {
 
         public void sendClientMessage(String msg) {
         if(out != null) {
-            String[] parts = msg.split("Opcode: ");
+            /**String[] parts = msg.split("Opcode: ");
             if (parts.length > 1) {
                 //String opcode = parts[1].split(" ")[0];
                 String[] msgbody = msg.split("Body: ");
@@ -227,7 +234,9 @@ public class Server {
                 out.println(body);
             } else { 
                 out.println(msg);
-            }
+            }*/
+
+            out.println(msg);
         }
     }
     }

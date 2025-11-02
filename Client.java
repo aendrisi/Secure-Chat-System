@@ -78,27 +78,38 @@ public class Client {
 
             out.println(regMessage);
             String serverResponse = in.readLine();
-            
             if(serverResponse != null) {
-                //Get the UID from server
                 String trimmedResponse = serverResponse.trim();
-                if(trimmedResponse.startsWith("UID:")) {
-                    try {  
-                        //store the uid
-                        uid = Integer.parseInt(trimmedResponse.substring(4).trim());
-                        System.out.println("Registration successful. Received UID: " + uid);
-                    } catch(NumberFormatException e) {
-                        System.out.println("Registration failed: Invalid UID format");
+                try {
+                    Message uidResponse = messagerToRelay.decodeMessage(trimmedResponse);
+                    if (uidResponse.getOpcode() == Opcode.REGI) {
+                        String uidBody = uidResponse.getBody().trim();
+
+                        uid = Integer.parseInt(uidBody);
+                        System.out.println(uidResponse);
+                        System.out.println("Registration successful. UID: " + uid);
+                        
+                    } else {
+                        System.out.println("Registration failed: unexpected Opcode: " + uidResponse.getOpcode());
                         scan.close();
                         return;
                     }
-                } else {
-                    System.out.println("Registration failed: Did not receive expected UID response");
+                } 
+                catch (NumberFormatException e) {
+                    System.out.println("Registration failed: invalid UID format");
                     scan.close();
                     return;
                 }
+                catch (Exception e) {
+                    System.out.println("Registration failed: Failed to decode response");
+                    e.printStackTrace();
+                    System.out.println(e.getMessage());
+                    scan.close();
+                    return;
+                }
+                
             } else {
-                System.out.println("Registration failed: null response.");
+                System.out.println("Registration failed: null response");
                 scan.close();
                 return;
             }

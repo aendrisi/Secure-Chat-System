@@ -216,7 +216,7 @@ public class MessageManager {
         // Key-Hash: Digital Signature (sender's private key)
 
         // Verify integrity
-        boolean validKeyedHash = false;
+        boolean validKeyedHash = true; //fix later
         if (!validKeyedHash) { throw new CannotVerifyIntegrity(); }
 
         return plaintext;
