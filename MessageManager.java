@@ -172,9 +172,7 @@ public class MessageManager {
         if (sessionMode) {
             decryptData = decryptHashSession(data);
         }
-        else {
-            decryptData = decryptHashRSA(data);
-        }
+        else { decryptData = decryptHashRSA(data); }
 
         Message message = new Message(decryptData);
         return message;

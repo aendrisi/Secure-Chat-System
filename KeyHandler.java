@@ -11,18 +11,27 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
+import java.rmi.server.ExportException;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.*;
+import javax.crypto.KeyAgreement;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+
+import javax.crypto.KeyAgreement;
 
 import org.omg.CORBA.UnknownUserException;
 
 public class KeyHandler {
     private final static String PUBLIC_KEY_DIR = "PublicKeys";
     private final static String RELAY_NAME = "Relay";
+    private final static int KEY_SIZE = 1024;
 
     /**
      * Creates and publishes a public and private key pair for the given user.
@@ -35,7 +44,7 @@ public class KeyHandler {
         // Generate key pair
         try {
             KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
-            kpg.initialize(1024); 
+            kpg.initialize(KEY_SIZE); 
             kp = kpg.generateKeyPair();
         } catch (Exception e) {
             System.out.println("Error: Unable to create key pair! " + e);
@@ -108,6 +117,35 @@ public class KeyHandler {
             } 
         } 
         throw new UnknownUserException();
+    }
+    
+    /**
+     * Creates and returns a Diffie-Hellman key pair (global parameters).
+     * @return Diffie-Hellman key pair
+     * @throws NoSuchAlgorithmException Unable to find algorithm
+     */
+    public static KeyPair createDHKeyPair() throws NoSuchAlgorithmException {
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("DiffieHellman");
+        kpg.initialize(KEY_SIZE);
+        return kpg.generateKeyPair();
+    }
+
+    /**
+     * Derives and returns session key from Diffie-Hellman keys.
+     * @param userKey User's private Diffie-Hellman key
+     * @param targetKey Target's public Diffie-Hellman key
+     * @return Session key
+     * @throws Exception Error with creating session key
+     */
+    public static SecretKey deriveSessionKey(PrivateKey userKey, PublicKey targetKey) 
+        throws Exception
+    {
+        KeyAgreement keyAgreement = KeyAgreement.getInstance("DiffieHellman");
+        keyAgreement.init(userKey);
+        keyAgreement.doPhase(targetKey, true); 
+        byte[] sharedSecretBytes = keyAgreement.generateSecret();
+
+        return new SecretKeySpec(sharedSecretBytes, 0, sharedSecretBytes.length, "AES");
     }
 
     /* 

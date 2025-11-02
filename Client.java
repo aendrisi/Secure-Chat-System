@@ -24,6 +24,7 @@ public class Client {
     private static int serverPort = 1025; 
     private static String hostName;
     private static String uid;
+    private static String sessionID;
     private static SecretKey sessionKey;
     private static KeyPair kp;
 
@@ -151,29 +152,25 @@ public class Client {
                     target, targetKey);
             
             // STAGE 2.2: Authentication and Session Setup with CLIENT
+            //%%% INCOMPLETE %%%//
             // ...
             try {
-                KeyPair userDKP;
-                KeyPair targetDKP; // TEST: should be replaced with the public key from the target
-                
-                KeyPairGenerator kpg = KeyPairGenerator.getInstance("DiffieHellman");
-                KeyAgreement keyAgreement = KeyAgreement.getInstance("DiffieHellman");
-                kpg.initialize(512);
-                
-                // Generate diffie-hellman key pairs
-                userDKP = kpg.generateKeyPair();
-                targetDKP = kpg.generateKeyPair();
+                // 1. Generate diffie-hellman key pairs
+                KeyPair userDKP = KeyHandler.createDHKeyPair();
+                KeyPair targetDKP = KeyHandler.createDHKeyPair(); // TEST: should be replaced with the public key from the target
 
-                // Derive shared secret  
-                keyAgreement.init(userDKP.getPrivate()); // USER private key
-                keyAgreement.doPhase(targetDKP.getPublic(), true); // TARGET public key
-                byte[] sharedSecretBytes = keyAgreement.generateSecret();
+                // 2. Share user's Diffie-Hellman public key to target
+
+                // 3. Get target's Diffie-Hellman public key
+                PublicKey targetDFKey = targetDKP.getPublic(); // TEST: should be replaced
                 
-                // Convert secret key
-                sessionKey = new SecretKeySpec(sharedSecretBytes, 0, sharedSecretBytes.length, "AES");
+                // 4. Derive shared secret  
+                sessionKey = KeyHandler.deriveSessionKey(userDKP.getPrivate(), targetDFKey);
+
                 //uid = 5; // TEST: should be given by the Relay
+                sessionID = "TEMP_SESSIONID"; // TEST: shoule be given by Relay
 
-                messagerToClient.setSession(sessionKey, "TEMP_SESSIONID");
+                messagerToClient.setSession(sessionKey, sessionID);
             } catch (Exception e) {} 
             
 
