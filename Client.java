@@ -23,7 +23,7 @@ public class Client {
     private static String serverHost = "localhost";
     private static int serverPort = 1025; 
     private static String hostName;
-    private static String uid;
+    private static int uid;
     private static String sessionID;
     private static SecretKey sessionKey;
     private static KeyPair kp;
@@ -53,10 +53,9 @@ public class Client {
             BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         ) {
             MessageHandler messageHandler = new MessageHandler(in);
-            messageHandler.start(); 
+            //messageHandler.start(); 
 
             // User to Relay communication: 
-            String sendingMessage;
             MessageManager messagerToRelay;
             try {
                 messagerToRelay = new MessageManager(hostName, kp.getPrivate(), RELAY_NAME);
@@ -66,39 +65,59 @@ public class Client {
                 KeyHandler.deletePublicKey(hostName);
                 return;
             }
-
+            
             // STAGE 1: Registration
-           /*try {
-                uid = keyhand.getUID(hostName);
-                if(uid == null) {
-                    uid = java.util.UUID.randomUUID().toString();
-                    System.out.println("Generated new uid" + uid);
+            String encodedPublicKey = Base64.getEncoder().encodeToString(kp.getPublic().getEncoded());
+            System.out.println("REGISTRATION STAGE");
+
+            String regMessage = messagerToRelay.encodeMessage(
+                Opcode.REGI,
+                encodedPublicKey
+            );
+            out.println(regMessage);
+            String serverResponse = in.readLine();
+            
+            if(serverResponse != null) {
+                String trimmedResponse = serverResponse.trim();
+                if(trimmedResponse.startsWith("UID:")) {
+                    try {
+                        uid = Integer.parseInt(trimmedResponse.substring(4).trim());
+                        System.out.println("Registration successful. Received UID: " + uid);
+                    } catch(NumberFormatException e) {
+                        System.out.println("Registration failed: Invalid UID format");
+                        scan.close();
+                        return;
+                    }
                 } else {
-                    System.out.println("Using existing uid" + uid);
+                    System.out.println("Registration failed: Did not receive expected UID response");
+                    scan.close();
+                    return;
                 }
-
-                keyhand.setUID(uid);
-                String pubKey = Base64.getEncoder().encodeToString(kp.getPublic().getEncoded());
-                String msgBody = "UID=" + uid + " | PublicKey=" + pubKey;
-                String regMessage = messagerToRelay.encodeMessage(
-                    Opcode.REGI,
-                    hostName,
-                    RELAY_NAME,
-                    msgBody
-                );
-
-                out.println(regMessage);
-
-            } catch(Exception e) {
-                System.out.println("UID registration failed" + e.getMessage());
+            } else {
+                System.out.println("Registration failed: null response.");
                 scan.close();
                 return;
-            } */
+            }
+
+            try {
+                if(in.ready()) {
+                    while (in.ready()) {
+                        in.readLine();
+                    }
+                }
+                Thread.sleep(100);
+            } catch(Exception e) {
+                e.printStackTrace();
+            }
+
+            String sendingMessage;
+
+            // STAGE 1: Registration
 
 
             // STAGE 2.1: Authentication and Session Setup with RELAY
             // ...
-
+            //System.out.println("Skipping STAGE 2.1");
             // Stage 2.15: CHOSING A CLIENT!
             String target;
             PublicKey targetKey = null;
@@ -173,7 +192,7 @@ public class Client {
                 messagerToClient.setSession(sessionKey, sessionID);
             } catch (Exception e) {} 
             
-
+            messageHandler.start();
             // STAGE 3: Message Exchange
             while(true) {
                 System.out.print(hostName + ": ");

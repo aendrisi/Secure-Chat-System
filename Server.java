@@ -6,6 +6,8 @@
 
 
 import java.io.*;
+import java.util.Base64;
+import java.util.Random;
 import java.util.concurrent.*;
 
 import javax.crypto.SecretKey;
@@ -13,14 +15,19 @@ import javax.crypto.SecretKey;
 import org.omg.CORBA.UnknownUserException;
 
 import java.net.*;
+import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.PublicKey;
+import java.security.spec.X509EncodedKeySpec;
 
 public class Server {
     private static final String RELAY_NAME = "Relay";
     //private static String serverHost = "localhost";
     private static int serverPort = 1025;
     private static ConcurrentHashMap<String, ClientHandler> client = new ConcurrentHashMap<>();
+    private static ConcurrentHashMap<Integer, PublicKey> uidKeyMap = new ConcurrentHashMap<>();
+    private static ConcurrentHashMap<String, Integer> hostUIDMap = new ConcurrentHashMap<>();
+    private static Random random = new Random();
     private static KeyPair kp;
 
     public static void main(String[] args) throws InterruptedException {
@@ -65,8 +72,8 @@ public class Server {
             bHandler.start();
 
             System.out.println("Both clients are connected to the server.");
-            aHandler.sendClientMessage("You have been connected to the other client.");
-            bHandler.sendClientMessage("You have been connected to the other client.");
+            //aHandler.sendClientMessage("You have been connected to the other client.");
+            //bHandler.sendClientMessage("You have been connected to the other client.");
 
             while(aHandler.isAlive() || bHandler.isAlive()) {
                 Thread.sleep(1000);
@@ -77,6 +84,33 @@ public class Server {
         } finally {
             System.out.println("Server terminated");
         }
+    }
+
+    //register client
+    public static int registerClient(String hostname, String encodedPublicKey) throws Exception {
+        byte[] byteKey = Base64.getDecoder().decode(encodedPublicKey);
+        X509EncodedKeySpec X509publicKey = new X509EncodedKeySpec(byteKey);
+        KeyFactory kf = KeyFactory.getInstance("RSA");
+        PublicKey publicKey = kf.generatePublic(X509publicKey);
+
+        Integer existingUid = hostUIDMap.get(hostname);
+        if (existingUid != null) {
+            uidKeyMap.put(existingUid, publicKey);
+            System.out.println(hostname + " UID found: " + existingUid);
+            return existingUid;
+        }
+
+        int newUid;
+
+        do {
+            newUid = 10000 + random.nextInt(90000); // 5 numbers
+        } while (uidKeyMap.containsKey(newUid));
+
+        uidKeyMap.put(newUid, publicKey);
+        hostUIDMap.put(hostname, newUid);
+
+        return newUid;
+
     }
 
     public static void relay(String sender, String msg) {
@@ -140,10 +174,18 @@ public class Server {
                     // Decode message
                     try {
                         Message inputMessage = new Message(input);
-                        System.out.println(
+
+                        if(inputMessage.getOpcode() == Opcode.REGI) {
+                            String encodedPublicKey = inputMessage.getBody();
+                            int uid = Server.registerClient(clientID, encodedPublicKey);
+                            System.out.println("Client " + clientID + " new UID: " + uid);
+                            out.println("UID:" + uid);
+                        } else {
+                            System.out.println(
                             inputMessage.getSender() + " to " + inputMessage.getReceiver() +
                             ": " + inputMessage.getBody());
-                        Server.relay(inputMessage);
+                            Server.relay(inputMessage);
+                        }
 
                     } catch (InvalidMessageFormat e) {
                         System.out.println("ERROR: MESSAGE FORMAT INVALID!");
