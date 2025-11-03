@@ -38,7 +38,7 @@ public class MessageManager {
 
     private boolean sessionMode = false; //If a session is active
     private SecretKey sessionKey;
-    private String sessionID;
+    private int sessionID;
     private LocalDateTime sessionExpiretime;
 
     private SecureRandom rand;
@@ -82,7 +82,7 @@ public class MessageManager {
      * @param sessionID Identifier for current session 
      * @param expiry The expiry time for the session
      */
-    public void setSession(SecretKey sessionKey, String sessionID, LocalDateTime expiry) {
+    public void setSession(SecretKey sessionKey, int sessionID, LocalDateTime expiry) {
         sessionMode = true;
         this.sessionKey = sessionKey;
         this.sessionID = sessionID;
@@ -95,13 +95,21 @@ public class MessageManager {
      * @param sessionKey Session key
      * @param sessionID Identifier for current session
      */
-    public LocalDateTime setSession(SecretKey sessionKey, String sessionID) {
+    public LocalDateTime setSession(SecretKey sessionKey, int sessionID) {
         sessionMode = true;
         this.sessionKey = sessionKey;
         this.sessionID = sessionID;
         this.sessionExpiretime = LocalDateTime.now().plusMinutes(SESSION_DURATION_MINS);
 
         return sessionExpiretime;
+    }
+
+    /**
+     * Sets sessionID to given value.
+     * @param sessionID Identifier for current session
+     */
+    public void setSessionID(int sessionID) {
+        this.sessionID = sessionID;
     }
 
     /**
@@ -201,7 +209,7 @@ public class MessageManager {
         //String ciphertext = plaintext;
         // Encryption: RSA (dest's public key)
         // Key-Hash: Digital Signature (sender's private key)
-        try {
+        /*try {
             // Digitally sign with sender priv key 
             Signature rsaSig = Signature.getInstance("SHA256withRSA");
             rsaSig.initSign(srcPrivKey);
@@ -231,9 +239,9 @@ public class MessageManager {
             System.out.println("RSA encryption failed: " + e.getMessage());
             e.printStackTrace();
             return "";
-        }
+        }*/
 
-        //return ciphertext;
+        return plaintext;
     }
 
     //%%% INCOMPLETE %%%//
@@ -248,7 +256,7 @@ public class MessageManager {
         // Key-Hash: HMAC (session key)
         //return ciphertext;
 
-        try {
+        /*try {
             //Convert to bytes and encrypt  
             byte[] plainBytes = plaintext.getBytes();
             //HMAC calculation
@@ -262,7 +270,8 @@ public class MessageManager {
         } catch (Exception e) {
             System.out.println("HMAC Failed: " + e.getMessage());
             return null;
-        }   
+        }   */
+       return plaintext;
     }
 
     //%%% INCOMPLETE %%%//
@@ -283,7 +292,7 @@ public class MessageManager {
         //if (!validKeyedHash) { throw new CannotVerifyIntegrity(); }
         //return plaintext;
 
-        try {
+        /*try {
             //split the ciphertext values from the separator
             String[] cipherVals = ciphertext.split(java.util.regex.Pattern.quote("||"), 2);
 
@@ -302,7 +311,9 @@ public class MessageManager {
             //but i dont have receiver private key here???
         } catch(CannotVerifyIntegrity | InvalidMessageFormat e) {
             throw new CannotVerifyIntegrity("RSA decode fail");
-        }
+        }*/
+
+        return ciphertext;
     }
 
     //%%% INCOMPLETE %%%//
@@ -324,7 +335,7 @@ public class MessageManager {
 
         //return plaintext;
 
-        try {
+        /*try {
             String[] hmacVals = ciphertext.split(java.util.regex.Pattern.quote("||"), 2);
             //Calculate HMAC and compare plaintext calc for integrity
             byte[] hmacBytes = Base64.getDecoder().decode(hmacVals[1]);
@@ -338,7 +349,9 @@ public class MessageManager {
             return "";
         } catch(Exception e) {
             throw new CannotVerifyIntegrity("HMAC verification failed");
-        }
+        }*/
+
+        return ciphertext;
     }
 
     /**
@@ -373,14 +386,24 @@ public class MessageManager {
         return list;
     }
 
+    /**
+     * Returns the destination.
+     * @return Destination name
+     */
     public String getDestination() {
         return destination;
     }
 
+    /**
+     * Returns the source.
+     * @return Source name
+     */
     public String getSource() {
         return source;
     }
 }
+
+
 
 /**
  * Exception if invalid hash.

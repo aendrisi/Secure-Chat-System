@@ -150,6 +150,29 @@ public class KeyHandler {
     }
 
     /**
+     * Converts the given Diffie-Hellman public key from string to Public Key
+     * @param key Diffie-Hellman public key (String)
+     * @return Diffie-Hellman public key (Public Key)
+     * @throws Exception Unable to convert
+     */
+    public static PublicKey convertStringtoDFPubKey (String key) throws Exception {
+        byte[] byteKey = Base64.getDecoder().decode(key);
+        X509EncodedKeySpec X509publicKey = new X509EncodedKeySpec(byteKey);
+        KeyFactory kf = KeyFactory.getInstance("DiffieHellman");
+        return kf.generatePublic(X509publicKey);
+    }
+
+    /**
+     * Converts the given Diffie-Hellman public key from Public Key to String.
+     * @param key Diffie-Hellman public key (Public Key)
+     * @return Diffie-Hellman public key (String)
+     * @throws Exception Unable to convert
+     */
+    public static String convertDFPubKeytoString (PublicKey key) throws Exception {
+        return Base64.getEncoder().encodeToString(key.getEncoded());
+    }
+
+    /**
      * Creates and returns a challenge value.
      */
     public static int createChallenge() {

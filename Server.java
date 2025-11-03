@@ -7,6 +7,7 @@
 
 import java.io.*;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.Random;
 import java.util.concurrent.*;
 
@@ -131,11 +132,16 @@ public class Server {
         String sender = msg.getSender();
         String receiver = msg.getReceiver();
         
-        // **** Aendri: I think we can make the client threads persistent by storing
-        //              them somewhere 
         ClientHandler receiverHandler = client.get(receiver);
         if(receiverHandler != null) {
-            receiverHandler.sendClientMessage(sender + ": " + msg.getBody());
+            MessageManager relayToClient = receiverHandler.getRelayToClientManager();
+            String msgToReceiver = relayToClient.encodeMessage(
+                Opcode.MESG,
+                sender,
+                receiver,
+                msg.getBody()
+            );
+            receiverHandler.sendClientMessage(msgToReceiver);
         } 
     }
 
@@ -143,12 +149,21 @@ public class Server {
     private static class ClientHandler extends Thread {
         private Socket clientSocket;
         private String clientID;
+        private int uid;
         private PrintWriter out;
         private BufferedReader in;
+        private MessageManager relayToClient;
 
         private KeyPair relayKeys;
         private PublicKey clientKey;
         private SecretKey sessionKey;
+        HashMap<String, String> list;
+
+        // SESSION SETUP
+        private int stateSESR = 0;
+        private int challenge1 = 0;
+        private int challenge2 = KeyHandler.createChallenge();
+        KeyPair dfkeyPair;
 
         public ClientHandler(Socket socket, String clientID, KeyPair keys) throws UnknownUser {
             this.clientSocket = socket;
@@ -162,21 +177,22 @@ public class Server {
             try {
                 out = new PrintWriter(clientSocket.getOutputStream(), true);
                 in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-                MessageManager relayToClient = new MessageManager(
+                relayToClient = new MessageManager(
                     RELAY_NAME, relayKeys.getPrivate(), clientID, clientKey);
 
                 String input; 
 
                 while ((input = in.readLine()) != null) {
-                    System.out.println("Received from " + clientID + ": " + input);
+                    //System.out.println("Received from " + clientID + ": " + input);
                     
                     // Encode message
                     try {
                         Message inputMessage = new Message(input);
 
+                        // REGISTRATION
                         if(inputMessage.getOpcode() == Opcode.REGI) {
                             String encodedPublicKey = inputMessage.getBody();
-                            int uid = Server.registerClient(clientID, encodedPublicKey);
+                            uid = Server.registerClient(clientID, encodedPublicKey);
                             System.out.println("Client " + clientID + " new UID: " + uid);
                             //out.println("UID:" + uid);
                             String uidMessage = relayToClient.encodeMessage(
@@ -186,17 +202,76 @@ public class Server {
 
                             out.println(uidMessage);
                             
-                        } else {
+                        } 
+                        // SESSION KEY: Client to Relay
+                        else if (inputMessage.getOpcode() == Opcode.SESR) {
+                            System.out.println("Authenticating and Session Setup with " + clientID);
+                            String body = inputMessage.getBody();
+                            if (stateSESR != 1) {
+                                // 1. Client -> Relay: Challenge 1
+                                list = MessageManager.readListBody(body);
+
+                                // Get Challenge 1
+                                if (list.containsKey("Challenge 1")) {
+                                    challenge1 = Integer.parseInt(list.get("Challenge 1"));
+                                } else { throw new InvalidMessageFormat(); }
+
+                                // 2. Relay -> Client: Challenge 1 response, Challenge 2, Diffie-Hellman public value
+                                dfkeyPair = KeyHandler.createDHKeyPair(); // create keypair
+
+                                list = new HashMap<>();
+                                list.put("Challenge 1 Response", String.valueOf(challenge1));
+                                list.put("Challenge 2", String.valueOf(challenge2));
+                                list.put("DF Value", KeyHandler.convertDFPubKeytoString(dfkeyPair.getPublic()));
+
+                                String msgString = relayToClient.encodeMessage(Opcode.SESR, MessageManager.createListBody(list));
+                                out.println(msgString);
+                                
+                                stateSESR = 1; 
+                                relayToClient.resetSession();
+                            } 
+                            // 3. Client -> Relay: Challenge 2 response, DF Value
+                            else {
+                                list = MessageManager.readListBody(body);
+
+                                // Verify Challenge 2 response
+                                if (list.containsKey("Challenge 2 Response")) {
+                                    int resp = Integer.parseInt(list.get("Challenge 2 Response"));
+                                    if (challenge2 != resp) {
+                                        throw new CannotVerifyIntegrity();
+                                    }
+                                } else { throw new InvalidMessageFormat(); }
+                                // Get D-F public value
+                                if (list.containsKey("DF Value")) {
+                                    PublicKey clientDF = KeyHandler.convertStringtoDFPubKey(list.get("DF Value"));
+                                    sessionKey = KeyHandler.deriveSessionKey(dfkeyPair.getPrivate(), clientDF); // Derive Session key
+                                } else { throw new InvalidMessageFormat(); }
+                                
+                                relayToClient.setSession(sessionKey, uid); // SessionID = UID
+                            }
+                        }
+                        // SESSION KEY: Client to Client
+                        else if (inputMessage.getOpcode() == Opcode.SESC) {
+
+                        }
+                        // MESSAGE: Client to Client
+                        else if (inputMessage.getOpcode() == Opcode.MESG) {
                             System.out.println(
                             inputMessage.getSender() + " to " + inputMessage.getReceiver() +
                             ": " + inputMessage.getBody());
                             Server.relay(inputMessage);
                         }
+                        else {
+                            System.out.println(inputMessage.getOpcode().toString());
+                            Server.relay(inputMessage);
+                        }
 
                     } catch (InvalidMessageFormat e) {
                         System.out.println("ERROR: MESSAGE FORMAT INVALID!");
+                        e.printStackTrace();
                     } catch (Exception e) {
                         System.out.println("ERROR: Something else is wrong with the message!");
+                        e.printStackTrace();
                     }
                 }
 
@@ -225,19 +300,27 @@ public class Server {
         }
 
         public void sendClientMessage(String msg) {
-        if(out != null) {
-            /**String[] parts = msg.split("Opcode: ");
-            if (parts.length > 1) {
-                //String opcode = parts[1].split(" ")[0];
-                String[] msgbody = msg.split("Body: ");
-                String body = msgbody[1].trim();
-                out.println(body);
-            } else { 
-                out.println(msg);
-            }*/
+            if(out != null) {
+                /**String[] parts = msg.split("Opcode: ");
+                if (parts.length > 1) {
+                    //String opcode = parts[1].split(" ")[0];
+                    String[] msgbody = msg.split("Body: ");
+                    String body = msgbody[1].trim();
+                    out.println(body);
+                } else { 
+                    out.println(msg);
+                }*/
 
-            out.println(msg);
+                out.println(msg);
+            }
         }
-    }
+    
+        /**
+         * Returns the MessageManager for Relay to Client 
+         * @return MessageManager for Relay to Client 
+         */
+        public MessageManager getRelayToClientManager() {
+            return relayToClient;
+        }
     }
 }

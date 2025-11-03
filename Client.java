@@ -32,7 +32,6 @@ public class Client {
     private static int uid;
 
     private static String sessionID;
-    private static SecretKey sessionKey;
 
     private static KeyPair kp;
 
@@ -75,7 +74,7 @@ public class Client {
                 return;
             }
             
-            // STAGE 1: Registration
+            // STAGE 1: Registration -----------------------------------------------------------------
             System.out.println("REGISTRATION STAGE");
             String encodedPublicKey = Base64.getEncoder().encodeToString(kp.getPublic().getEncoded());
 
@@ -138,19 +137,15 @@ public class Client {
                 e.printStackTrace();
             }
 
-
-            // Authenticate, session setup, and messaging
-            // STAGE 2.1: Authentication and Session Setup with RELAY
+            // STAGE 2.1: Authentication and Session Setup with RELAY ---------------------------------------
             try {
                 AuthSessiontoRelay(socket, out, in);
             } catch (Exception e) {
-                System.out.println ("Unable to authenticate to relay! ");
+                System.out.println ("Unable to authenticate to relay!");
                 e.printStackTrace();
             }
             
-            // ...
-            //System.out.println("Skipping STAGE 2.1");
-            // Stage 2.15: CHOSING A CLIENT!
+            // Stage 2.15: CHOSING A CLIENT! ----------------------------------------------------------------
 
             messagerToClient = chooseDest(scan);
             // verify destination was chosen
@@ -160,33 +155,28 @@ public class Client {
                 return;
             }
             
-            // STAGE 2.2: Authentication and Session Setup with CLIENT
-            //%%% INCOMPLETE %%%//
-            // ...
+            // STAGE 2.2: Authentication and Session Setup with CLIENT ---------------------------------------
             try {
-                // 1. Generate diffie-hellman key pairs
-                KeyPair userDKP = KeyHandler.createDHKeyPair();
-                KeyPair targetDKP = KeyHandler.createDHKeyPair(); // TEST: should be replaced with the public key from the target
-
-                // 2. Share user's Diffie-Hellman public key to target
-
-                // 3. Get target's Diffie-Hellman public key
-                PublicKey targetDFKey = targetDKP.getPublic(); // TEST: should be replaced
-                
-                // 4. Derive shared secret  
-                sessionKey = KeyHandler.deriveSessionKey(userDKP.getPrivate(), targetDFKey);
-
-                //uid = 5; // TEST: should be given by the Relay
-                sessionID = "TEMP_SESSIONID"; // TEST: shoule be given by Relay
-
-                messagerToClient.setSession(sessionKey, sessionID);
-            } catch (Exception e) {} 
+                //%%% INCOMPLETE %%%//
+                //AuthSessiontoClient(socket, out, in);
+            } catch (Exception e) {
+                System.out.println ("Unable to authenticate to " + messagerToClient.getDestination() + "!");
+                e.printStackTrace();
+            }
             
-            messageHandler.start();
             // STAGE 3: Message Exchange
+            messageHandler.start();
+            System.out.println("You're now chatting with " + messagerToClient.getDestination() + "!");
+            System.out.println("(Type '/exit' to leave)");
+            System.out.println("------------------------------------------------");
             while(true) {
-                System.out.print(hostName + ": ");
                 sendingMessage = scan.nextLine();
+
+                // Check for client disconnect
+                if("/exit".equalsIgnoreCase(sendingMessage)){
+                    System.out.println("------------------------------------------------");
+                    break;
+                }
 
                 // Inner message to target client
                 String innerMessage = messagerToClient.encodeMessage(
@@ -194,7 +184,7 @@ public class Client {
                         sendingMessage
                 );
 
-                // Outer message for relay to relay
+                // Outer message for client to relay
                 String outerMessage = messagerToRelay.encodeMessage(
                         Opcode.MESG,
                         hostName,
@@ -210,13 +200,6 @@ public class Client {
                                     outerMessage +
                                     "\n---- OUTER ----\n"); */
                 // ..................................
-
-
-                // TEST: Force disconnects
-                if("q".equalsIgnoreCase(sendingMessage)){
-                    System.out.println("Client disconnecting");
-                    break;
-                }
 
                 out.println(outerMessage);
             }
@@ -303,6 +286,7 @@ public class Client {
             PublicKey targetDF;
             int challenge1 = KeyHandler.createChallenge();
             int challenge2 = 0;
+            SecretKey sessionKey;
 
             // 1. Client -> Relay: Challenge 1
             list = new HashMap<>();
@@ -333,10 +317,7 @@ public class Client {
                     } else { throw new InvalidMessageFormat(); }
                     // Get D-F public value
                     if (list.containsKey("DF Value")) {
-                        byte[] byteKey = list.get("DF Value").getBytes();
-                        X509EncodedKeySpec X509publicKey = new X509EncodedKeySpec(byteKey);
-                        KeyFactory kf = KeyFactory.getInstance("DiffieHellman");
-                        targetDF = kf.generatePublic(X509publicKey);
+                        targetDF = KeyHandler.convertStringtoDFPubKey(list.get("DF Value"));
                     } else { throw new InvalidMessageFormat(); }
                 } 
                 else {
@@ -347,15 +328,17 @@ public class Client {
 
             // Derive session key
             sessionKey = KeyHandler.deriveSessionKey(dfkeyPair.getPrivate(), targetDF);
+            messagerToRelay.setSession(sessionKey, uid);
 
             // 3. Client -> Relay: Challenge 2 response, DF Value
             list = new HashMap<>();
             list.put("Challenge 2 Response", String.valueOf(challenge2));
-            list.put("DF Value", dfkeyPair.getPublic().toString());
+            list.put("DF Value", KeyHandler.convertDFPubKeytoString(dfkeyPair.getPublic()));
 
             msgString = messagerToRelay.encodeMessage(Opcode.SESR, MessageManager.createListBody(list));
             out.println(msgString);
 
+            System.out.println("Authenticated and set up session with Relay!");
             }
 
     }
@@ -371,11 +354,23 @@ public class Client {
             try {
                 String serverResponse; 
                 while((serverResponse = serverStream.readLine()) != null) {
-                    System.out.println(serverResponse);
-                    System.out.println();
+                    try {
+                        Message serverMessage = new Message(serverResponse);
+                        
+                        // Client to Client Message
+                        if (serverMessage.getOpcode() == Opcode.MESG) {
+                            Message clientMessage = new Message(serverMessage.getBody());
+                            System.out.println(clientMessage.getSender() + ": " + clientMessage.getBody());
+                        }
+                    }
+                    catch (Exception e) {
+                        System.out.println("Unable to read message!");
+                        e.printStackTrace();
+                    }
                 }
             } catch(IOException e) {
                 System.out.println("Server closed");
+                e.printStackTrace();
             }
         }
 

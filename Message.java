@@ -33,7 +33,7 @@ public class Message {
     private String receiver;
     private LocalDateTime timestamp;
     private int size = 0;
-    private String sessionID = "";
+    private int sessionID = -1;
     private String body;
 
     /**
@@ -116,8 +116,10 @@ public class Message {
                 String header = headers[NUM_REQUIRED_HEADERS].substring(0, headerPos);
                 if (header.equals("SessionID")) {
                     // If end of session ID found
-                    if (header.indexOf(HEADER_SEPERATOR) > 0) {
-                        sessionID = header.substring(0, header.indexOf(HEADER_SEPERATOR));
+                    int sessEnd = headers[NUM_REQUIRED_HEADERS].indexOf(HEADER_SEPERATOR);
+                    if (sessEnd > 0) {
+                        String sessionIDString = headers[NUM_REQUIRED_HEADERS].substring(header.length() + 2, sessEnd).trim();
+                        sessionID = Integer.parseInt(sessionIDString);
                     } 
                     else { throw new InvalidMessageFormat("Missing SessionID end.");  }   
                 }
@@ -142,7 +144,7 @@ public class Message {
      * Sets the sessionID to the given values.
      * @param sessionID
      */
-    public void setSessionID (String sessionID) {
+    public void setSessionID (int sessionID) {
         this.sessionID = sessionID;
     }
 
@@ -157,7 +159,7 @@ public class Message {
             "Timestamp: " + timestamp + HEADER_SEPERATOR +
             "Size: " + size + HEADER_SEPERATOR;
 
-            if (!sessionID.isEmpty()) {
+            if (sessionID > 0) {
                 message += "SessionID: " + sessionID + HEADER_SEPERATOR;
             }
 
@@ -203,7 +205,7 @@ public class Message {
      * -1 if sessionID doesn't exist.
      * @return SessionID
      */
-    public String getSessionID() { return sessionID; }
+    public int getSessionID() { return sessionID; }
 
     /**
      * Returns the message body of the message.
