@@ -136,7 +136,8 @@ public class Server {
         if(receiverHandler != null) {
             MessageManager relayToClient = receiverHandler.getRelayToClientManager();
             String msgToReceiver = relayToClient.encodeMessage(
-                Opcode.MESG,
+                //Opcode.MESG,
+                msg.getOpcode(),
                 sender,
                 receiver,
                 msg.getBody()
@@ -205,7 +206,7 @@ public class Server {
                         } 
                         // SESSION KEY: Client to Relay
                         else if (inputMessage.getOpcode() == Opcode.SESR) {
-                            System.out.println("Authenticating and Session Setup with " + clientID);
+                            //System.out.println("Authenticating and Session Setup with " + clientID);
                             String body = inputMessage.getBody();
                             if (stateSESR != 1) {
                                 // 1. Client -> Relay: Challenge 1
@@ -247,12 +248,15 @@ public class Server {
                                     sessionKey = KeyHandler.deriveSessionKey(dfkeyPair.getPrivate(), clientDF); // Derive Session key
                                 } else { throw new InvalidMessageFormat(); }
                                 
+                                System.out.println("Authenticating and Session Setup with " + clientID);
                                 relayToClient.setSession(sessionKey, uid); // SessionID = UID
+                                stateSESR = 0;
                             }
                         }
                         // SESSION KEY: Client to Client
                         else if (inputMessage.getOpcode() == Opcode.SESC) {
-
+                            System.out.println("Relaying SESC message from " + inputMessage.getSender() + " to " + inputMessage.getReceiver());
+                            Server.relay(inputMessage);
                         }
                         // MESSAGE: Client to Client
                         else if (inputMessage.getOpcode() == Opcode.MESG) {

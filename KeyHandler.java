@@ -10,6 +10,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.math.BigInteger;
 import java.nio.file.Files;
 import java.rmi.server.ExportException;
 import java.security.KeyFactory;
@@ -24,6 +25,7 @@ import java.util.*;
 import javax.crypto.KeyAgreement;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.DHParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
 import javax.crypto.KeyAgreement;
@@ -129,6 +131,30 @@ public class KeyHandler {
         KeyPairGenerator kpg = KeyPairGenerator.getInstance("DiffieHellman");
         kpg.initialize(KEY_SIZE);
         return kpg.generateKeyPair();
+    }
+    
+    public static KeyPair createDHKeyPair(String encodedParams) throws Exception {
+        DHParameterSpec dhParams = deriveDHParams(encodedParams); // Assuming deriveDHParams exists
+
+        KeyPairGenerator kpg = KeyPairGenerator.getInstance("DiffieHellman");
+        kpg.initialize(dhParams, new SecureRandom());
+
+        return kpg.generateKeyPair();
+    }
+
+    private static DHParameterSpec deriveDHParams(String encodedParams) throws Exception {
+        String[] parts = encodedParams.split(java.util.regex.Pattern.quote("||"));
+        if (parts.length != 2) {
+            throw new InvalidMessageFormat("Invalid DH parameter format.");
+        }
+        
+        byte[] pBytes = Base64.getDecoder().decode(parts[0]);
+        byte[] gBytes = Base64.getDecoder().decode(parts[1]);
+
+        BigInteger p = new BigInteger(1, pBytes);
+        BigInteger g = new BigInteger(1, gBytes);
+
+        return new DHParameterSpec(p, g);
     }
 
     /**
