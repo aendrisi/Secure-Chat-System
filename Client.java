@@ -159,12 +159,25 @@ public class Client {
             }
             
             // STAGE 2.2: Authentication and Session Setup with CLIENT ---------------------------------------
-            try {
+            boolean authenticator = hostName.compareTo(messagerToClient.getDestination()) < 0;
+
+            if(authenticator) {
+                System.out.println("\n--- INITIATING CLIENT TO CLIENT SESSION SETUP with " + messagerToClient.getDestination() + " ---");
+                try {
+                    AuthSessiontoClient(socket, out, in);
+                } catch(Exception e) {
+                    System.out.println ("Unable to authenticate line 169 " + messagerToClient.getDestination());
+                }
+            } else {
+                System.out.println("\n--- waiting for CLIENT TO CLIENT SESSION SETUP from " + messagerToClient.getDestination() + " ---");
+            }
+
+            /**try {
                 AuthSessiontoClient(socket, out, in);
             } catch (Exception e) {
                 System.out.println ("Unable to authenticate to " + messagerToClient.getDestination() + "!");
                 e.printStackTrace();
-            }
+            }*/
             
             // STAGE 3: Message Exchange
             messageHandler.start();
@@ -396,6 +409,7 @@ public class Client {
         if (innerMsg.getOpcode() != Opcode.SESC) throw new InvalidMessageFormat("Inner message is not SESC");
         
         list = MessageManager.readListBody(innerMsg.getBody());
+        String targetInterKey = messagerToClient.getDestination() + " intermediate value";
 
         if (!list.containsKey("Challenge 1 Response")) throw new InvalidMessageFormat("Missing Challenge 1 Response.");
         int challenge1Resp = Integer.parseInt(list.get("Challenge 1 Response"));
@@ -403,13 +417,15 @@ public class Client {
             System.out.println("Challenge 1 verification failed. Restarting.");
             throw new CannotVerifyIntegrity("Challenge 1 Response mismatch. Authentication failed.");
         }
-        System.out.println("4. Challenge 1 verified. Received Bob's DH parameters and Challenge 2.");
+        System.out.println("4. Challenge 1 verified. Received"+ messagerToClient.getDestination() + " DH parameters and Challenge 2.");
 
         if (!list.containsKey("Challenge 2")) throw new InvalidMessageFormat("Missing Challenge 2.");
         challenge2 = Integer.parseInt(list.get("Challenge 2"));
 
-        if (!list.containsKey("Bob intermediate value")) throw new InvalidMessageFormat("Missing Bob's intermediate DF value.");
-        String bobDFValue = list.get("Bob intermediate value");
+        if (!list.containsKey(targetInterKey)){
+            throw new InvalidMessageFormat("Missing " + messagerToClient.getDestination() + "'s intermediate DF value");
+        }
+        String bobDFValue = list.get(targetInterKey);
 
         dhKeyPair = KeyHandler.createDHKeyPair(list.get("global parameters")); 
         targetDF = KeyHandler.convertStringtoDFPubKey(bobDFValue);
@@ -417,11 +433,11 @@ public class Client {
         sessionKey = KeyHandler.deriveSessionKey(dhKeyPair.getPrivate(), targetDF);
         messagerToClient.setSession(sessionKey, sessionID);
 
-        System.out.println("5. Sending Challenge 2 response and Alice's DH intermediate value...");
+        System.out.println("5. Sending Challenge 2 response and " + hostName + "DH intermediate value...");
 
         list = new HashMap<>();
         list.put("Challenge 2 Response", String.valueOf(challenge2));
-        list.put("Alice intermediate value", KeyHandler.convertDFPubKeytoString(dhKeyPair.getPublic()));
+        list.put(hostName + " intermediate value", KeyHandler.convertDFPubKeytoString(dhKeyPair.getPublic()));
 
         innerBody = MessageManager.createListBody(list);
         
@@ -435,7 +451,7 @@ public class Client {
         );
         out.println(outerMessage);
 
-        System.out.println("Client-to-Client session key established with " + messagerToClient.getDestination() + " (Session ID: " + sessionID + ").");
+        System.out.println("Client to Client session key established with " + messagerToClient.getDestination() + " (Session ID: " + sessionID + ").");
 
     }
 
@@ -471,13 +487,16 @@ public class Client {
                             }
 
                             HashMap<String, String> list = MessageManager.readListBody(innerMsg.getBody());
-                                if (list.containsKey("Challenge 1")) {
+                                
+                            if (list.containsKey("Challenge 1")) {
+                                    int challenge1 = Integer.parseInt(list.get("Challenge 1"));
                                     if (dhKeyPair != null) {
                                         System.err.println("Warning: Received new SESC request before completing previous session setup.");
-                                        dhKeyPair = null;
-                                        challenge2 = 0;
+                                        this.dhKeyPair = null;
+                                        this.challenge2 = 0;
                                     }
-                                int challenge1 = Integer.parseInt(list.get("Challenge 1"));
+                                
+                                //int challenge1 = Integer.parseInt(list.get("Challenge 1"));
                                 System.out.println("2. Received Challenge 1 (" + challenge1 + ") from " + innerMsg.getSender() + ".");
 
                                 this.dhKeyPair = KeyHandler.createDHKeyPair();
@@ -485,9 +504,9 @@ public class Client {
 
                                 list = new HashMap<>();
                                 list.put("Challenge 1 Response", String.valueOf(challenge1));
-                                list.put("Challenge 2", String.valueOf(challenge2));
-                                list.put("global parameters", KeyHandler.convertDFPubKeytoString(dhKeyPair.getPublic())); 
-                                list.put("Bob intermediate value", KeyHandler.convertDFPubKeytoString(dhKeyPair.getPublic()));
+                                list.put("Challenge 2", String.valueOf(this.challenge2));
+                                list.put("global parameters", KeyHandler.convertDFPubKeytoString(this.dhKeyPair.getPublic())); 
+                                list.put(hostName + " intermediate value", KeyHandler.convertDFPubKeytoString(this.dhKeyPair.getPublic()));
 
                                 String innerBody = MessageManager.createListBody(list);
                                 String innerMessageFinal = messagerToClient.encodeMessage(Opcode.SESC, innerBody);
@@ -500,31 +519,36 @@ public class Client {
                                 );
 
                                 clientOut.println(outerMessage);
-                                System.out.println("Sent Challenge 1 Response, Challenge 2 (" + challenge2 + ") and DH parameters back to " + innerMsg.getSender() + ".");
-                            } else if(list.containsKey("Challenge 2 response")) {
-                                System.out.println("Received final DH value from " + innerMsg.getSender() + ".");
-                                if (dhKeyPair == null || challenge2 == 0) {
+                                System.out.println("Sent Challenge 1 Response, Challenge 2 (" + this.challenge2 + ") and DH parameters back to " + innerMsg.getSender());
+                            } else if(list.containsKey("Challenge 2 Response")) {
+                                
+                                System.out.println("Received final DH value from " + innerMsg.getSender());
+                                
+                                if (this.dhKeyPair == null || this.challenge2 == 0) {
                                     System.err.println("ERROR: Missing ephemeral DH state for key derivation in Step 3.");
                                     throw new InvalidMessageFormat("State error: Cannot verify Challenge 2.");
                                 }
+
+                                String senderIntermediateKey = innerMsg.getSender() + " intermediate value";
+                                System.out.println("Received final DH value from " + innerMsg.getSender());
                                 int receivedChallenge2Resp = Integer.parseInt(list.get("Challenge 2 Response"));
                                 
-                                if (receivedChallenge2Resp != challenge2) {
-                                    dhKeyPair = null;
-                                    challenge2 = 0;
+                                if (receivedChallenge2Resp != this.challenge2) {
+                                    this.dhKeyPair = null;
+                                    this.challenge2 = 0;
                                     throw new CannotVerifyIntegrity("Challenge 2 response mismatch. Authentication failed.");
                                 }
 
-                                if (!list.containsKey("Alice intermediate value")) {
-                                    throw new InvalidMessageFormat("Missing Alice's intermediate DF value.");
+                                if (!list.containsKey(senderIntermediateKey)) {
+                                    throw new InvalidMessageFormat("Missing " + innerMsg.getSender() + "'s intermediate DF value");
                                 }
 
-                                PublicKey aliceDF = KeyHandler.convertStringtoDFPubKey(list.get("Alice intermediate value"));
-                                SecretKey finalSessionKey = KeyHandler.deriveSessionKey(dhKeyPair.getPrivate(), aliceDF);
+                                PublicKey aliceDF = KeyHandler.convertStringtoDFPubKey(list.get(senderIntermediateKey)); 
+                                SecretKey finalSessionKey = KeyHandler.deriveSessionKey(this.dhKeyPair.getPrivate(), aliceDF);
                                 messagerToClient.setSession(finalSessionKey, serverMessage.getSessionID());
                                 dhKeyPair = null;  
                                 challenge2 = 0;
-                                System.out.println("Client-to-Client session key established with " + innerMsg.getSender() + " (Session ID: " + serverMessage.getSessionID() + ").");
+                                System.out.println("Client to Client session key established with " + innerMsg.getSender() + " (Session ID: " + serverMessage.getSessionID() + ").");
 
                             } else {
                                 throw new InvalidMessageFormat("SESC message is missing required challenge fields.");   
