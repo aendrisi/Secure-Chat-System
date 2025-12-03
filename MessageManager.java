@@ -41,7 +41,17 @@ public class MessageManager {
     private int sessionID;
     private LocalDateTime sessionExpiretime;
 
-    private SecureRandom rand;
+    private SecureRandom rand = new SecureRandom();
+
+    /**
+     * Creates a MessageManager with an unknown destination.
+     * @param source Source's Name
+     * @param srcPrivKey Source's Private Key
+     */
+    public MessageManager(String source, PrivateKey srcPrivKey) {
+        this.source = source;
+        this.srcPrivKey = srcPrivKey;
+    }
 
     /**
      * Creates a MessageManager with an unknown destination public key.
@@ -58,7 +68,6 @@ public class MessageManager {
         this.srcPrivKey = srcPrivKey;
 
         destPubKey = KeyHandler.findPublicKey(destination);
-        rand = new SecureRandom();
     }
 
     /**
@@ -73,9 +82,24 @@ public class MessageManager {
         this.destination =  destination;
         this.srcPrivKey = srcPrivKey;
         this.destPubKey = destPubKey;
-        rand = new SecureRandom();
     }
     
+    /**
+     * Sets the destination name
+     * @param destination Destination's name
+     */
+    public void setDestination(String destination) {
+        this.destination = destination;
+    }
+
+    /**
+     * Sets the Destination's public Key
+     * @param destPubKey Destination's Public Key
+     */
+    public void setDestPubKey(PublicKey destPubKey) {
+        this.destPubKey = destPubKey;
+    }
+
     /**
      * Activates Session Mode and sets the relevant fields. 
      * @param sessionKey Session key
@@ -401,6 +425,14 @@ public class MessageManager {
     public String getSource() {
         return source;
     }
+
+    /**
+     * Returns true if a session is established, false otherwise.
+     * @return sessionMode
+     */
+    public Boolean isSessionActive() {
+        return sessionMode;
+    }
 }
 
 
@@ -438,5 +470,14 @@ class UnknownUser extends Exception {
     }
 }
 
+class UnableToRegister extends Exception {
+    public UnableToRegister() {
+        super();
+    }
+
+    public UnableToRegister(String m) {
+        super(m);
+    }
+}
 
 

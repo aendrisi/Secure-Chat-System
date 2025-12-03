@@ -4,7 +4,6 @@
  * Code for the Relay server
  */
 
-
 import java.io.*;
 import java.util.Base64;
 import java.util.HashMap;
@@ -21,9 +20,8 @@ import java.security.spec.X509EncodedKeySpec;
 
 public class Server {
     private static final String RELAY_NAME = "Relay";
-    //private static String serverHost = "localhost";
-    private static int serverPort = 1025;
-    private static ConcurrentHashMap<String, ClientHandler> client = new ConcurrentHashMap<>();
+    private static final int serverPort = 1025;
+    private static ConcurrentHashMap<String, ClientHandler> clients = new ConcurrentHashMap<>();
     private static ConcurrentHashMap<Integer, PublicKey> uidKeyMap = new ConcurrentHashMap<>();
     private static ConcurrentHashMap<String, Integer> hostUIDMap = new ConcurrentHashMap<>();
     private static Random random = new Random();
@@ -31,7 +29,6 @@ public class Server {
 
     public static void main(String[] args) throws InterruptedException {
         System.out.println("Server is running");
-        KeyHandler keyhand = new KeyHandler(); 
 
         // Generate Public and Private Keys
         try {
@@ -42,7 +39,24 @@ public class Server {
             return;
         }
         
+        // Server running and waiting for clients
         try(ServerSocket serverSocket = new ServerSocket(serverPort)) {
+            // Listen for new clients 
+            while (!serverSocket.isClosed()) {
+                Socket socket = serverSocket.accept();
+                System.out.println("A new client has connected.");
+                ClientHandler cHandler;
+                try {
+                    cHandler = new ClientHandler(socket, kp);
+                } catch (Exception e) {
+                    System.out.println("ERROR: Unable to find client's public key!");
+                    continue;
+                }
+
+                cHandler.start();
+            }
+
+
             //Alice connects to the server
             System.out.println("A has yet to connect...");
             Socket aSocket = serverSocket.accept();
@@ -54,7 +68,7 @@ public class Server {
                 return;
             }
             
-            client.put("Alice", aHandler);
+            clients.put("Alice", aHandler);
             aHandler.start();
 
             //Bob connects to the server
@@ -67,7 +81,7 @@ public class Server {
                 System.out.println("ERROR: Unable to find client Bob's public key!");
                 return;
             }
-            client.put("Bob", bHandler);
+            clients.put("Bob", bHandler);
             bHandler.start();
 
             System.out.println("Both clients are connected to the server.");
@@ -85,12 +99,21 @@ public class Server {
         }
     }
 
-    //register client and add uid
+    /**
+     * Registers client with the Relay and returns an UID or returns a client's existing UID.
+     * @param hostname Client's identifier name
+     * @param encodedPublicKey Client's public key
+     * @return UID 
+     * @throws Exception
+     */
     public static int registerClient(String hostname, String encodedPublicKey) throws Exception {
+        // Decode Public Key
         byte[] byteKey = Base64.getDecoder().decode(encodedPublicKey);
         X509EncodedKeySpec X509publicKey = new X509EncodedKeySpec(byteKey);
         KeyFactory kf = KeyFactory.getInstance("RSA");
         PublicKey publicKey = kf.generatePublic(X509publicKey);
+
+        // Search for existing UID
         Integer existingUid = hostUIDMap.get(hostname);
         
         //if uid exists, just return the existing one
@@ -110,29 +133,18 @@ public class Server {
         hostUIDMap.put(hostname, newUid);
 
         return newUid;
-
     }
 
-    public static void relay(String sender, String msg) {
-            String receiver = "";
-            if(sender.equals("Alice")) { 
-                receiver = "Bob";
-            } else {
-                receiver = "Alice";
-            }
-
-            ClientHandler receiverHandler = client.get(receiver);
-            if(receiverHandler != null) {
-                receiverHandler.sendClientMessage(sender + ": " + msg);
-            } 
-    }
-
-    // Relays the message to the receiver
+    /**
+     * Relays the message from a client to the intended receiver.
+     * @param msg Message from Client
+     */
     public static void relay(Message msg) {
         String sender = msg.getSender();
         String receiver = msg.getReceiver();
         
-        ClientHandler receiverHandler = client.get(receiver);
+        ClientHandler receiverHandler = clients.get(receiver);
+        // Reciever Found
         if(receiverHandler != null) {
             MessageManager relayToClient = receiverHandler.getRelayToClientManager();
             String msgToReceiver = relayToClient.encodeMessage(
@@ -144,13 +156,20 @@ public class Server {
             );
             receiverHandler.sendClientMessage(msgToReceiver);
         } 
+        // Receiver not found
+        else {
+            System.out.println("ERROR: Unable to find receiver '" + receiver + "'");
+            // %%% SEND ERROR MESSAGE BACK TO SENDER %%%
+        }
     }
 
-    //Communicate server to client 
+    /**
+     * Handler for server to client communication
+     */
     private static class ClientHandler extends Thread {
         private Socket clientSocket;
-        private String clientID;
-        private int uid;
+        private String clientName;
+
         private PrintWriter out;
         private BufferedReader in;
         private MessageManager relayToClient;
@@ -158,30 +177,59 @@ public class Server {
         private KeyPair relayKeys;
         private PublicKey clientKey;
         private SecretKey sessionKey;
-        HashMap<String, String> list;
+
+        // Session Establishment stages
+        enum Stages {
+            STAGE1, STAGE2, STAGE3;
+        }
+
+        // REGISTRATION
+        private int uid = -1;
 
         // SESSION SETUP
-        private int stateSESR = 0;
+        private Stages stateSESR = Stages.STAGE1;
         private int challenge1 = 0;
         private int challenge2 = KeyHandler.createChallenge();
         KeyPair dfkeyPair;
 
-        public ClientHandler(Socket socket, String clientID, KeyPair keys) throws UnknownUser {
+        /**
+         * Creates a client handler with the given socket.
+         * @param socket Client to Relay Socket
+         * @param relayKeys Relay's Public/Private Key Pair
+         */
+        public ClientHandler(Socket socket, KeyPair relayKeys) {
             this.clientSocket = socket;
-            this.clientID = clientID;
-            this.relayKeys = keys;
-
-            clientKey = KeyHandler.findPublicKey(clientID);
+            this.relayKeys = relayKeys;
         }
 
+        /** 
+         * DELETE
+         * Creates a client handler with the given socket, clientID, and the Relay's public key pair
+         * @param socket Client to Relay Socket
+         * @param clientName Client username
+         * @param keys Relay public key pair
+         * @throws UnknownUser
+         */
+        public ClientHandler(Socket socket, String clientName, KeyPair keys) throws UnknownUser {
+            this.clientSocket = socket;
+            this.clientName = clientName;
+            this.relayKeys = keys;
+
+            clientKey = KeyHandler.findPublicKey(clientName);
+        }
+
+        /**
+         * Checks for messages from client
+         */
         public void run() {
             try {
                 out = new PrintWriter(clientSocket.getOutputStream(), true);
                 in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-                relayToClient = new MessageManager(
-                    RELAY_NAME, relayKeys.getPrivate(), clientID, clientKey);
+                relayToClient = new MessageManager(RELAY_NAME, relayKeys.getPrivate());
 
                 String input; 
+                String body;
+                HashMap<String, String> bodyList;
 
                 while ((input = in.readLine()) != null) {
                     //System.out.println("Received from " + clientID + ": " + input);
@@ -192,13 +240,38 @@ public class Server {
 
                         // REGISTRATION
                         if(inputMessage.getOpcode() == Opcode.REGI) {
-                            String encodedPublicKey = inputMessage.getBody();
-                            uid = Server.registerClient(clientID, encodedPublicKey);
-                            System.out.println("Client " + clientID + " new UID: " + uid);
-                            //out.println("UID:" + uid);
+                            body = inputMessage.getBody();
+                            bodyList = MessageManager.readListBody(body);
+                            clientName = inputMessage.getSender();
+
+                            // Get Client's Public Key
+                            String encodedPublicKey;
+                            if (bodyList.containsKey("Public Key")) {
+                                    encodedPublicKey = bodyList.get("Public Key");
+                            } else { throw new InvalidMessageFormat(); }
+
+                            // Generate/Locate UID
+                            uid = Server.registerClient(clientName, encodedPublicKey);
+                            System.out.println("Client " + clientName + " new UID: " + uid);
+                            
+                            // Update MessageManager
+                            relayToClient.setDestination(clientName);
+                            if (uidKeyMap.get(uid) != null) {
+                                relayToClient.setDestPubKey(uidKeyMap.get(uid));
+                            } else {
+                                throw new UnableToRegister("UID not found!");
+                            }
+
+                            // Add to the client list
+                            clients.put(clientName, this);
+
+                            // Send Client their UID
+                            bodyList.clear();
+                            bodyList.put("UID", String.valueOf(uid));
+
                             String uidMessage = relayToClient.encodeMessage(
                                 Opcode.REGI,
-                                String.valueOf(uid)
+                                MessageManager.createListBody(bodyList)
                             );
 
                             out.println(uidMessage);
@@ -207,50 +280,54 @@ public class Server {
                         // SESSION KEY: Client to Relay
                         else if (inputMessage.getOpcode() == Opcode.SESR) {
                             //System.out.println("Authenticating and Session Setup with " + clientID);
-                            String body = inputMessage.getBody();
-                            if (stateSESR != 1) {
+                            body = inputMessage.getBody();
+                            if (stateSESR == Stages.STAGE1) {
                                 // 1. Client -> Relay: Challenge 1
-                                list = MessageManager.readListBody(body);
+                                bodyList = MessageManager.readListBody(body);
 
                                 // Get Challenge 1
-                                if (list.containsKey("Challenge 1")) {
-                                    challenge1 = Integer.parseInt(list.get("Challenge 1"));
+                                if (bodyList.containsKey("Challenge 1")) {
+                                    challenge1 = Integer.parseInt(bodyList.get("Challenge 1"));
                                 } else { throw new InvalidMessageFormat(); }
 
                                 // 2. Relay -> Client: Challenge 1 response, Challenge 2, Diffie-Hellman public value
                                 dfkeyPair = KeyHandler.createDHKeyPair(); // create keypair
 
-                                list = new HashMap<>();
-                                list.put("Challenge 1 Response", String.valueOf(challenge1));
-                                list.put("Challenge 2", String.valueOf(challenge2));
-                                list.put("DF Value", KeyHandler.convertDFPubKeytoString(dfkeyPair.getPublic()));
+                                bodyList.clear();
+                                bodyList.put("Challenge 1 Response", String.valueOf(challenge1));
+                                bodyList.put("Challenge 2", String.valueOf(challenge2));
+                                bodyList.put("DF Value", KeyHandler.convertDFPubKeytoString(dfkeyPair.getPublic()));
 
-                                String msgString = relayToClient.encodeMessage(Opcode.SESR, MessageManager.createListBody(list));
+                                String msgString = relayToClient.encodeMessage(
+                                    Opcode.SESR, 
+                                    MessageManager.createListBody(bodyList)
+                                );
+
                                 out.println(msgString);
                                 
-                                stateSESR = 1; 
-                                relayToClient.resetSession();
+                                // Set State
+                                stateSESR = Stages.STAGE2; 
+                                relayToClient.resetSession(); 
                             } 
                             // 3. Client -> Relay: Challenge 2 response, DF Value
                             else {
-                                list = MessageManager.readListBody(body);
+                                bodyList = MessageManager.readListBody(body);
 
                                 // Verify Challenge 2 response
-                                if (list.containsKey("Challenge 2 Response")) {
-                                    int resp = Integer.parseInt(list.get("Challenge 2 Response"));
-                                    if (challenge2 != resp) {
-                                        throw new CannotVerifyIntegrity();
-                                    }
+                                if (bodyList.containsKey("Challenge 2 Response")) {
+                                    int resp = Integer.parseInt(bodyList.get("Challenge 2 Response"));
+                                    if (challenge2 != resp) { throw new CannotVerifyIntegrity(); }
                                 } else { throw new InvalidMessageFormat(); }
+
                                 // Get D-F public value
-                                if (list.containsKey("DF Value")) {
-                                    PublicKey clientDF = KeyHandler.convertStringtoDFPubKey(list.get("DF Value"));
+                                if (bodyList.containsKey("DF Value")) {
+                                    PublicKey clientDF = KeyHandler.convertStringtoDFPubKey(bodyList.get("DF Value"));
                                     sessionKey = KeyHandler.deriveSessionKey(dfkeyPair.getPrivate(), clientDF); // Derive Session key
                                 } else { throw new InvalidMessageFormat(); }
                                 
-                                System.out.println("Authenticating and Session Setup with " + clientID);
+                                System.out.println("Authenticating and Session Setup with " + clientName);
                                 relayToClient.setSession(sessionKey, uid); // SessionID = UID
-                                stateSESR = 0;
+                                stateSESR = Stages.STAGE1; // Reset state
                             }
                         }
                         // SESSION KEY: Client to Client
@@ -261,8 +338,9 @@ public class Server {
                         // MESSAGE: Client to Client
                         else if (inputMessage.getOpcode() == Opcode.MESG) {
                             System.out.println(
-                            inputMessage.getSender() + " to " + inputMessage.getReceiver() +
-                            ": " + inputMessage.getBody());
+                                inputMessage.getSender() + " to " + inputMessage.getReceiver() +
+                                ": " + inputMessage.getBody()
+                            );
                             Server.relay(inputMessage);
                         }
                         else {
@@ -273,6 +351,11 @@ public class Server {
                     } catch (InvalidMessageFormat e) {
                         System.out.println("ERROR: MESSAGE FORMAT INVALID!");
                         e.printStackTrace();
+                        // %%% Error message to client %%%
+                    } catch (CannotVerifyIntegrity e) {
+                        System.out.println("ERROR: CANNOT VERIFY CLIENT'S INTEGRITY!");
+                        e.printStackTrace();
+                        // %%% Error message to client %%%
                     } catch (Exception e) {
                         System.out.println("ERROR: Something else is wrong with the message!");
                         e.printStackTrace();
@@ -280,7 +363,7 @@ public class Server {
                 }
 
             } catch(IOException e) {
-                System.err.println(clientID + " " + e.getMessage());
+                System.err.println("ERROR: " + clientName + " " + e.getMessage());
             } finally {
                 try {
                     if(out != null) {
@@ -295,10 +378,10 @@ public class Server {
                         clientSocket.close();
                     }
 
-                    client.remove(clientID);
+                    clients.remove(clientName);
 
                 } catch(IOException e) {
-                    System.err.println(clientID + " " + e.getMessage());
+                    System.err.println(clientName + " " + e.getMessage());
                 }
             }
         }
