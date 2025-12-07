@@ -354,6 +354,8 @@ public class Server {
                         // %%% Error message to client %%%
                     } catch (CannotVerifyIntegrity e) {
                         System.out.println("ERROR: CANNOT VERIFY CLIENT'S INTEGRITY!");
+                        String errorMsg = relayToClient.encodeMessage(Opcode.ERSR, "Relay session key expired");
+                        out.println(errorMsg);
                         e.printStackTrace();
                         // %%% Error message to client %%%
                     } catch (Exception e) {

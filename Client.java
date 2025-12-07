@@ -189,6 +189,8 @@ public class Client {
                 } else {
                     AuthSessiontoClientRequest(out, in);
                 }
+            } catch(UnknownSessionEstablishmentState | CannotVerifyIntegrity | InvalidMessageFormat e) {
+                System.out.println("Attempting to reestablish client session");
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -224,22 +226,46 @@ public class Client {
                 // Relay Session Key Expired
                 if (!messagerToRelay.isSessionActive()) {
                     messageHandler.interrupt();
+                    try {
+                        while(in.ready()) {
+                            in.readLine();
+                        }
+                    } catch(IOException e) {
+                        System.err.println("Error: " + e.getMessage());
+                    }
+
+                    System.out.println("Reauthenticating Relay...");
                     try { AuthSessiontoRelay(out, in); }
                     catch (Exception e) { e.printStackTrace(); }
                 }
 
                 // Client Session Key Expired
                 if (clientSessionState != Stages.SESSION || !messagerToClient.isSessionActive()) {
-                    clientSessionState = Stages.NO_SESSION;
                     messageHandler.interrupt();
-                    try { AuthSessiontoClientRequest(out, in); }
-                    catch (Exception e) { e.printStackTrace(); }
+                    try {
+                        while(in.ready()) {
+                            in.readLine();
+                        }
+                    } catch(IOException e) {
+                        System.err.println("Error: " + e.getMessage());
+                    }
+
+                    clientSessionState = Stages.NO_SESSION;
+                    System.out.println("Reauthenticating Client....");
+                    try { 
+                        AuthSessiontoClientRequest(out, in);
+                    } catch (UnknownSessionEstablishmentState | CannotVerifyIntegrity | InvalidMessageFormat e) {
+                        System.out.println("Client reestablishment attempting: " + e.getMessage());
+                    }
+                    catch (Exception e) { 
+                        e.printStackTrace();
+                    }
                 }
 
                 if (messageHandler.isInterrupted() || !messageHandler.isAlive()) {
+                    messageHandler = new MessageHandler(in, out);
                     messageHandler.start();
                 }
-
 
                 sendingMessage = scan.nextLine();
 
@@ -540,7 +566,7 @@ public class Client {
         public void run() {
             String serverResponse; 
             try {
-                while((serverResponse = serverStream.readLine()) != null) {
+                while(!Thread.currentThread().isInterrupted() && (serverResponse = serverStream.readLine()) != null) {
                     //Message serverMessage = new Message(serverResponse);
                     Message serverMessage = messagerToRelay.decodeMessage(serverResponse);
 
@@ -553,43 +579,59 @@ public class Client {
 
                     // Request to Authenticate Client to Client
                     else if(serverMessage.getOpcode() == Opcode.SESC) {
-                        clientSessionState = Stages.NO_SESSION;
+
+                        //check if active session already happening
+                        /*(if(clientSessionState != Stages.NO_SESSION) {
+                            System.out.println("Session establishment progressing, do not recreate session");
+                            return;
+                        }*/
+
+                        //clientSessionState = Stages.NO_SESSION;
                         try {
                             Message innerMsg = messagerToClient.decodeMessage(serverMessage.getBody());
                             if (innerMsg.getOpcode() != Opcode.SESC) {
                                 throw new InvalidMessageFormat("Inner message is not SESC.");
                             }
                             AuthSessiontoClientResponse(clientOut, serverStream, innerMsg);
+                        } catch(UnknownSessionEstablishmentState e) {
+                            System.out.println("Client reestablishment session: " + e.getMessage());
                         } catch (Exception e) {
                             clientSessionState = Stages.NO_SESSION;
                             e.printStackTrace();
-                            return;
+                            //return;
                         }
                     }
                     
-                    // Error: Session Key with Replay Expired/Invalid
+                    // Error: Session Key with Relay Expired/Invalid
                     else if (serverMessage.getOpcode() == Opcode.ERSR) {
                         messagerToRelay.resetSession();
-                        // %%%
+                        System.out.println("Session key with relay expired/invalid");
                     }
 
                     // Error: Session Key with Recipient Client Expired/Invalid
                     else if (serverMessage.getOpcode() == Opcode.ERSC) {
                         clientSessionState = Stages.NO_SESSION;
                         messagerToClient.resetSession();
-                        // %%%
+                        System.out.println("Session key with client expired/invalid");
                     }
 
                     // Error: Message Invalid
                     else if (serverMessage.getOpcode() == Opcode.ERRM) {
-                        // %%%
+                        System.out.println("Message invalid");
+                        try {
+                            System.out.println(serverMessage.getBody());
+                        } catch(Exception ignore) {
+                            //ignore the invalid message?
+                        }
                     }
 
                     // Error: Recipient Not Found
                     else if (serverMessage.getOpcode() == Opcode.ERNF) {
-                        // %%%
+                        System.out.println(messagerToClient.getDestination() + " is not found");
                     }
                 }
+            } catch(InterruptedException e) {
+                System.out.println("Message Handler interrupted");
             }
             catch (Exception e) {
                 System.out.println("Unable to read message!");
@@ -640,7 +682,11 @@ public class Client {
          */
         static private int stage1Response (Message msg) throws Exception{
             System.out.println("Session Establishment: Stage 1 (Response " + messagerToClient.getDestination() + ")");
-            if (clientSessionState != Stages.NO_SESSION) { throw new UnknownSessionEstablishmentState("Session Establishment in Progress!");}
+            //if (clientSessionState != Stages.NO_SESSION) { throw new UnknownSessionEstablishmentState("Session Establishment in Progress!");}
+            if(clientSessionState != Stages.NO_SESSION) {
+                clientSessionState = Stages.NO_SESSION;
+            }
+            
             if (msg.getOpcode() != Opcode.SESC) { throw new InvalidMessageFormat("Expecting Client Session Establishment."); }
             clientSessionState = Stages.STAGE1_RESPONSE;
 

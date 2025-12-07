@@ -26,7 +26,7 @@ import java.time.LocalDateTime;
  * MessageManager encodes and decodes messages between 2 endpoints.
  */
 public class MessageManager {
-    private final int SESSION_DURATION_MINS = 15;
+    private final int SESSION_DURATION_MINS = 1;
     private static final String BODY_SEPERATOR = "###";
     private static final String VALUE_SEPERATOR = ": ";
 
@@ -427,11 +427,23 @@ public class MessageManager {
     }
 
     /**
-     * Returns true if a session is established, false otherwise.
+     * Returns true if a session is established and not expired, false otherwise.
      * @return sessionMode
      */
     public Boolean isSessionActive() {
-        return sessionMode;
+        //check for session mode
+        if(!sessionMode) {
+            return false;
+        }
+
+        //check expiry time 
+        if(sessionExpiretime.isBefore(LocalDateTime.now())) {
+            System.out.println("Session has expired");
+            resetSession();
+            return false;
+        }
+
+        return true;
     }
 }
 
