@@ -28,7 +28,7 @@ import java.security.*;
  * MessageManager encodes and decodes messages between 2 endpoints.
  */
 public class MessageManager {
-    private final int SESSION_DURATION_MINS = 10;
+    private final int SESSION_DURATION_MINS = 1;
     private static final String BODY_SEPERATOR = "###";
     private static final String VALUE_SEPERATOR = ": ";
 
@@ -232,42 +232,7 @@ public class MessageManager {
      * @return Ciphertext
      */
     private String encryptHashRSA (String plaintext) {
-        //String ciphertext = plaintext;
-        // Encryption: RSA (dest's public key)
-        // Key-Hash: Digital Signature (sender's private key)
-        /*try {
-            // Digitally sign with sender priv key 
-            Signature rsaSig = Signature.getInstance("SHA256withRSA");
-            rsaSig.initSign(srcPrivKey);
-            rsaSig.update(plaintext.getBytes());
-            byte[] digSig = rsaSig.sign();
-
-            // Encrypt message with receiver pub key
-            SecretKey secKey = KeyHandler.createAESSecretKey();
-
-            // Encrypt using AES on symmetric key
-            Cipher aesCip = Cipher.getInstance("AES/CBC/PKCS5Padding");
-            aesCip.init(Cipher.ENCRYPT_MODE, secKey);
-            byte[] encData = aesCip.doFinal(plaintext.getBytes());
-
-            // Encrypt key using RSA public key
-            Cipher rsaCip = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-            rsaCip.init(Cipher.PUBLIC_KEY, destPubKey);
-            byte[] encKey = rsaCip.doFinal(secKey.getEncoded());
-
-            // Encode the signature and messages then return the combined RSA
-            String encSig = Base64.getEncoder().encodeToString(digSig);
-            String encDataString = Base64.getEncoder().encodeToString(encData);
-            String encKeyString = Base64.getEncoder().encodeToString(encKey);
-
-            return encDataString + "||" + encKeyString + "||" + encSig;
-        } catch(Exception e) {
-            System.out.println("RSA encryption failed: " + e.getMessage());
-            e.printStackTrace();
-            return "";
-        }*/
-
-        return plaintext;
+        return "";
     }
 
     //%%% INCOMPLETE %%%//
@@ -277,27 +242,7 @@ public class MessageManager {
      * @return Ciphertext
      */
     private String encryptHashSession (String plaintext) {
-        //String ciphertext = plaintext;
-        // Encryption: Secret Key (session key)
-        // Key-Hash: HMAC (session key)
-        //return ciphertext;
-
-        /*try {
-            //Convert to bytes and encrypt  
-            byte[] plainBytes = plaintext.getBytes();
-            //HMAC calculation
-            Mac hashMAC = Mac.getInstance("HmacSHA256");
-            hashMAC.init(sessionKey);
-            byte[] hmacBytes = hashMAC.doFinal(plainBytes);
-            //Encode HMAC
-            String encodedHMAC = Base64.getEncoder().encodeToString(hmacBytes);
-
-            return plainBytes + "||" + encodedHMAC;
-        } catch (Exception e) {
-            System.out.println("HMAC Failed: " + e.getMessage());
-            return null;
-        }   */
-       return plaintext;
+        return "";
     }
 
     //%%% INCOMPLETE %%%//
@@ -309,37 +254,7 @@ public class MessageManager {
      * @throws CannotVerifyIntegrity Message contents have been altered
      */
     private String decryptHashRSA (String ciphertext) throws CannotVerifyIntegrity {
-        //String plaintext = ciphertext;
-        // Decryption: RSA (dest's public key)
-        // Key-Hash: Digital Signature (sender's private key)
-
-        // Verify integrity
-        //boolean validKeyedHash = true; //fix later
-        //if (!validKeyedHash) { throw new CannotVerifyIntegrity(); }
-        //return plaintext;
-
-        /*try {
-            //split the ciphertext values from the separator
-            String[] cipherVals = ciphertext.split(java.util.regex.Pattern.quote("||"), 2);
-
-            if(cipherVals.length != 2) {
-                throw new InvalidMessageFormat("RSA Ciphertext has issues");
-            }
-
-            // Decode the data and signature
-            byte[] encData = Base64.getDecoder().decode(cipherVals[0]);
-            byte[] digSig = Base64.getDecoder().decode(cipherVals[1]);
-
-            boolean validKeyedHash = true; //fix later
-            if (!validKeyedHash) { throw new CannotVerifyIntegrity(); }
-            return "plaintext";
-            // Decrypt with receiver's public key????
-            //but i dont have receiver private key here???
-        } catch(CannotVerifyIntegrity | InvalidMessageFormat e) {
-            throw new CannotVerifyIntegrity("RSA decode fail");
-        }*/
-
-        return ciphertext;
+        return "";
     }
 
     //%%% INCOMPLETE %%%//
@@ -351,33 +266,7 @@ public class MessageManager {
      * @throws CannotVerifyIntegrity
      */
     private String decryptHashSession (String ciphertext) throws CannotVerifyIntegrity {
-        String plaintext = ciphertext;
-        // Decryption: Secret Key (session key)
-        // Key-Hash: HMAC (session key)
-
-        // Verify integrity
-        //boolean validKeyedHash = false;
-        //if (!validKeyedHash) { throw new CannotVerifyIntegrity(); }
-
-        //return plaintext;
-
-        /*try {
-            String[] hmacVals = ciphertext.split(java.util.regex.Pattern.quote("||"), 2);
-            //Calculate HMAC and compare plaintext calc for integrity
-            byte[] hmacBytes = Base64.getDecoder().decode(hmacVals[1]);
-            Mac verMac = Mac.getInstance("HmacSHA256");
-            byte[] verHMACBytes = verMac.doFinal(hmacVals[0].getBytes());
-
-            if(!MessageDigest.isEqual(hmacBytes, verHMACBytes)) {
-                throw new CannotVerifyIntegrity("HMAC validation failed");
-            }
-            
-            return "";
-        } catch(Exception e) {
-            throw new CannotVerifyIntegrity("HMAC verification failed");
-        }*/
-
-        return ciphertext;
+        return "";
     }
 
     /**

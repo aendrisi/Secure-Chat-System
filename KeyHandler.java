@@ -142,6 +142,7 @@ public class KeyHandler {
         return kpg.generateKeyPair();
     }
 
+
     private static DHParameterSpec deriveDHParams(String encodedParams) throws Exception {
         String[] parts = encodedParams.split(java.util.regex.Pattern.quote("||"));
         if (parts.length != 2) {
@@ -210,6 +211,17 @@ public class KeyHandler {
         KeyGenerator generator = KeyGenerator.getInstance("AES");
         generator.init(128); // The AES key size in number of bits
         return generator.generateKey();
+    }
+
+    public static class InvalidMessageFormat extends Exception {
+
+        public InvalidMessageFormat(String message) {
+            super(message);
+        }
+
+        public InvalidMessageFormat(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 
 }
