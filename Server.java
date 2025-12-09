@@ -33,6 +33,11 @@ public class Server {
         // Generate Public and Private Keys
         try {
             kp = KeyHandler.createRSAKeyPair(RELAY_NAME);
+            File relayKeyFile = new File("PublicKeys/Relay.txt");
+            if (!relayKeyFile.exists()) {
+                System.err.println("Cant publish Relay public key");
+                return;
+            }
         } catch (Exception e) {
             System.out.println("Error: Unable to create key pair! " + e);
             e.printStackTrace();
@@ -201,7 +206,9 @@ public class Server {
                     
                     // Encode message
                     try {
-                        Message inputMessage = new Message(input);
+                        //Message inputMessage = new Message(input);
+                        String decryptedInput = relayToClient.decodeMessage(input).toString();
+                        Message inputMessage = new Message(decryptedInput);
 
                         // REGISTRATION
                         if(inputMessage.getOpcode() == Opcode.REGI) {
@@ -345,7 +352,9 @@ public class Server {
                         clientSocket.close();
                     }
 
-                    clients.remove(clientName);
+                    if(clientName != null) {
+                        clients.remove(clientName);
+                    }
 
                 } catch(IOException e) {
                     System.err.println(clientName + " " + e.getMessage());
@@ -355,15 +364,6 @@ public class Server {
 
         public void sendClientMessage(String msg) {
             if(out != null) {
-                /**String[] parts = msg.split("Opcode: ");
-                if (parts.length > 1) {
-                    //String opcode = parts[1].split(" ")[0];
-                    String[] msgbody = msg.split("Body: ");
-                    String body = msgbody[1].trim();
-                    out.println(body);
-                } else { 
-                    out.println(msg);
-                }*/
 
                 out.println(msg);
             }
