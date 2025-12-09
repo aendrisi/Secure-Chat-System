@@ -56,41 +56,6 @@ public class Server {
                 cHandler.start();
             }
 
-
-            //Alice connects to the server
-            System.out.println("A has yet to connect...");
-            Socket aSocket = serverSocket.accept();
-            ClientHandler aHandler;
-            try {
-               aHandler = new ClientHandler(aSocket, "Alice", kp);
-            } catch (Exception e) {
-                System.out.println("ERROR: Unable to find client Alice's public key!");
-                return;
-            }
-            
-            clients.put("Alice", aHandler);
-            aHandler.start();
-
-            //Bob connects to the server
-            System.out.println("B  has yet to connect...");
-            Socket bSocket = serverSocket.accept();
-            ClientHandler bHandler;
-            try {
-               bHandler = new ClientHandler(bSocket, "Bob", kp);
-            } catch (Exception e) {
-                System.out.println("ERROR: Unable to find client Bob's public key!");
-                return;
-            }
-            clients.put("Bob", bHandler);
-            bHandler.start();
-
-            System.out.println("Both clients are connected to the server.");
-            //aHandler.sendClientMessage("You have been connected to the other client.");
-            //bHandler.sendClientMessage("You have been connected to the other client.");
-
-            while(aHandler.isAlive() || bHandler.isAlive()) {
-                Thread.sleep(1000);
-            }
         } catch(IOException e) {
             System.err.println("Exception: " + e.getMessage());
             e.printStackTrace();
@@ -252,7 +217,7 @@ public class Server {
 
                             // Generate/Locate UID
                             uid = Server.registerClient(clientName, encodedPublicKey);
-                            System.out.println("Client " + clientName + " new UID: " + uid);
+                            System.out.println("REGI " + clientName + ": new UID " + uid);
                             
                             // Update MessageManager
                             relayToClient.setDestination(clientName);
@@ -279,10 +244,11 @@ public class Server {
                         } 
                         // SESSION KEY: Client to Relay
                         else if (inputMessage.getOpcode() == Opcode.SESR) {
-                            //System.out.println("Authenticating and Session Setup with " + clientID);
+                            System.out.println("SESR " + clientName + ":");
                             body = inputMessage.getBody();
                             if (stateSESR == Stages.STAGE1) {
                                 // 1. Client -> Relay: Challenge 1
+                                System.out.println("- SESR " + clientName + " (1): Client -> Relay");
                                 bodyList = MessageManager.readListBody(body);
 
                                 // Get Challenge 1
@@ -291,6 +257,7 @@ public class Server {
                                 } else { throw new InvalidMessageFormat(); }
 
                                 // 2. Relay -> Client: Challenge 1 response, Challenge 2, Diffie-Hellman public value
+                                System.out.println("- SESR " + clientName + " (2): Relay -> Client");
                                 dfkeyPair = KeyHandler.createDHKeyPair(); // create keypair
 
                                 bodyList.clear();
@@ -311,6 +278,7 @@ public class Server {
                             } 
                             // 3. Client -> Relay: Challenge 2 response, DF Value
                             else {
+                                System.out.println("- SESR " + clientName + " (3): Client -> Relay");
                                 bodyList = MessageManager.readListBody(body);
 
                                 // Verify Challenge 2 response
@@ -325,22 +293,19 @@ public class Server {
                                     sessionKey = KeyHandler.deriveSessionKey(dfkeyPair.getPrivate(), clientDF); // Derive Session key
                                 } else { throw new InvalidMessageFormat(); }
                                 
-                                System.out.println("Authenticating and Session Setup with " + clientName);
+                                System.out.println("SESR " + clientName + ": Session Established");
                                 relayToClient.setSession(sessionKey, uid); // SessionID = UID
                                 stateSESR = Stages.STAGE1; // Reset state
                             }
                         }
                         // SESSION KEY: Client to Client
                         else if (inputMessage.getOpcode() == Opcode.SESC) {
-                            System.out.println("Relaying SESC message from " + inputMessage.getSender() + " to " + inputMessage.getReceiver());
+                            System.out.println("SESC " + clientName + ": Relay " + inputMessage.getSender() + " -> " + inputMessage.getReceiver());
                             Server.relay(inputMessage);
                         }
                         // MESSAGE: Client to Client
                         else if (inputMessage.getOpcode() == Opcode.MESG) {
-                            System.out.println(
-                                inputMessage.getSender() + " to " + inputMessage.getReceiver() +
-                                ": " + inputMessage.getBody()
-                            );
+                            System.out.println("MESG " + clientName + ": Relay " + inputMessage.getSender() + " -> " + inputMessage.getReceiver());
                             Server.relay(inputMessage);
                         }
                         else {

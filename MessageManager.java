@@ -22,11 +22,13 @@ import java.security.SecureRandom;
 import java.security.Signature;
 import java.time.LocalDateTime;
 
+import java.security.*;
+
 /**
  * MessageManager encodes and decodes messages between 2 endpoints.
  */
 public class MessageManager {
-    private final int SESSION_DURATION_MINS = 1;
+    private final int SESSION_DURATION_MINS = 10;
     private static final String BODY_SEPERATOR = "###";
     private static final String VALUE_SEPERATOR = ": ";
 
@@ -411,6 +413,25 @@ public class MessageManager {
     }
 
     /**
+     * Parses a given list body to get the values for the expected values
+     * @param list List Body 
+     * @param expected List of expected keys
+     * @return List of values in order of expected keys
+     * @throws Exception
+     */
+    public static String[] parseListBody(HashMap<String, String> list, String[] expected) throws Exception {
+        String[] values = new String[expected.length];
+
+        for (int i = 0; i < expected.length; i++) {
+            if (list.containsKey(expected[i])) {
+                values[i] = list.get(expected[i]);
+            } else { throw new InvalidMessageFormat("Missing " + expected[i]); }
+        }
+
+        return values;
+    }
+
+    /**
      * Returns the destination.
      * @return Destination name
      */
@@ -438,7 +459,7 @@ public class MessageManager {
 
         //check expiry time 
         if(sessionExpiretime.isBefore(LocalDateTime.now())) {
-            System.out.println("Session has expired");
+            System.out.println("[Session has expired]");
             resetSession();
             return false;
         }
@@ -447,6 +468,235 @@ public class MessageManager {
     }
 }
 
+/**
+ * Manage session setup between client-relay and client-client
+ */
+class SessionSetup {
+    enum State { NO_SESSION, PROCESSING, SESSION; }
+    enum SetupType { REQUEST, RESPONSE; }
+
+    private State state = State.NO_SESSION;
+    private SetupType type;
+
+    private KeyPair dhKeyPair;
+    private PublicKey targetDF;
+    private int challenge1;
+    private int challenge2;
+    private SecretKey sessionKey;
+    
+    public SessionSetup() {
+        this.type = SetupType.RESPONSE;
+        resetSession();
+    }
+
+    /**
+     * Resets all values
+     * @throws NoSuchAlgorithmException
+     */
+    private void resetValues() {
+        try {
+            this.dhKeyPair = KeyHandler.createDHKeyPair();
+        } catch (NoSuchAlgorithmException e) { e.printStackTrace(); }
+        
+        this.targetDF = null;
+
+        if (type == SetupType.REQUEST) {
+            this.challenge1 = KeyHandler.createChallenge();
+            this.challenge2 = 0;
+        } else {
+            this.challenge1 = 0;
+            this.challenge2 = KeyHandler.createChallenge();
+        }
+        
+        this.sessionKey = null;
+    }
+
+    /**
+     * Restarts the session to not established
+     */
+    public void resetSession() {
+        this.state = State.NO_SESSION;
+        resetValues();
+    }
+
+    /**
+     * Returns the the current state 
+     * @return Current State
+     */
+    public State getState() {
+        return state;
+    }
+
+    /**
+     * Returns the secret key if a session has been established
+     * @return Diffie-Hellman secret key
+     */
+    public SecretKey getKey() {
+        if (state == State.SESSION) { return sessionKey; }
+        else { return null; }
+    }
+
+    /**
+     * Creates a returns an encoded client-relay session setup message
+     * @param body
+     * @param messager
+     * @return
+     */
+    public static String createMessage(String body, MessageManager messager) {
+        return messager.encodeMessage(
+            Opcode.SESR,  
+            body
+        );
+    }
+
+    /**
+     * Parses the given relay message, checks if it's for session establishment
+     * @param msg
+     * @param messager
+     * @return
+     */
+    public static HashMap<String, String> parseMessage(Message msg, MessageManager messager) throws Exception{
+        // Check opcode
+        if (msg.getOpcode() != Opcode.SESR) {
+            throw new InvalidMessageFormat("Expecting Relay Session Establishment");
+        }
+
+        return MessageManager.readListBody(msg.getBody());
+    }
+
+    /**
+     * Creates a returns an encoded client-client session setup message
+     * @param body
+     * @param messagerRelay
+     * @param messagerClient
+     * @return
+     */
+    public static String createMessage(String body, MessageManager messagerRelay, MessageManager messagerClient) {
+        String innerMsgString = messagerClient.encodeMessage(
+                Opcode.SESC,
+                body
+        );
+
+        return messagerRelay.encodeMessage(
+                Opcode.SESC,  
+                messagerClient.getSource(),
+                messagerClient.getDestination(),
+                innerMsgString
+            );
+    }
+
+    /**
+     * Given a session establishment message, it returns the next message to be sent
+     * @param inputList Parsed list from input
+     * @return Next message to be sent, empty values indicate session has been established (response)
+     * @throws Exception
+     */
+    public String nextStep(HashMap<String, String> inputList) throws Exception {
+        HashMap<String, String> outputList = new HashMap<>();
+        
+        // New session establishment
+        if (state == State.NO_SESSION || state == State.SESSION) {
+            type = SetupType.RESPONSE;
+            resetSession();
+            System.out.println("[Reset Session]");
+        }
+
+        // REQUEST
+        if (type == SetupType.REQUEST) {
+            switch (state) {
+                case SESSION:
+                    throw new UnknownSessionEstablishmentState("Wrong state!");
+                case NO_SESSION: 
+                    throw new UnknownSessionEstablishmentState("Wrong state!");
+                case PROCESSING: 
+                    // 2. SRC <- DST (Request): Challenge 1 Response, Challenge 2, D-F Public Values
+                    System.out.println("+ Session Setup Request (2): Dest -> Source");
+                    String [] values = {"Challenge 1 Response", "Challenge 2", "DF Value"};
+                    values = MessageManager.parseListBody(inputList, values);
+
+                    // Verify Challenge 1 Response
+                    if (challenge1 != Integer.parseInt(values[0])) {
+                        throw new CannotVerifyIntegrity("Challenge 1 Response mismatch. Authentication failed.");
+                    }
+
+                    // Challenge 2
+                    challenge2 = Integer.parseInt(values[1]);
+
+                    // Derive session key
+                    targetDF = KeyHandler.convertStringtoDFPubKey(values[2]);
+                    sessionKey = KeyHandler.deriveSessionKey(dhKeyPair.getPrivate(), targetDF);
+
+                    // 3. SRC -> DST (Request): Challenge 2 Response, DF Value
+                    System.out.println("+ Session Setup Request (3): Source -> Dest");
+                    outputList.put("Challenge 2 Response", String.valueOf(challenge2));
+                    outputList.put("DF Value", KeyHandler.convertDFPubKeytoString(dhKeyPair.getPublic()));
+                    state = State.SESSION;
+                    return MessageManager.createListBody(outputList);
+            }   
+        }
+        // RESPONSE
+        else if (type == SetupType.RESPONSE) {
+            switch (state) {
+                case SESSION:
+                    throw new UnknownSessionEstablishmentState("Wrong state!");
+                case NO_SESSION: 
+                    // 1. SRC <- DST (Response): Challenge 1
+                    System.out.println("+ Session Setup Response (1): Dest -> Source");
+                    String [] values1 = {"Challenge 1"};
+                    values1 = MessageManager.parseListBody(inputList, values1);
+                    challenge1 = Integer.parseInt(values1[0]);
+
+                    // 2. SRC -> DST (Response): Challenge 1 response, Challenge 2, Diffie-Hellman public value
+                    System.out.println("+ Session Setup Response (2): Source -> Dest");
+                    outputList.put("Challenge 1 Response", String.valueOf(challenge1));
+                    outputList.put("Challenge 2", String.valueOf(challenge2));
+                    outputList.put("DF Value", KeyHandler.convertDFPubKeytoString(dhKeyPair.getPublic()));
+                    
+                    state = State.PROCESSING;
+                    return MessageManager.createListBody(outputList);
+
+                case PROCESSING: 
+                    // 3. SRC <- DST (Response): Challenge 2 response, DF Value
+                    System.out.println("+ Session Setup Response (3): Dest -> Source");
+                    String [] values2 = {"Challenge 2 Response", "DF Value"};
+                    values2 = MessageManager.parseListBody(inputList, values2);
+
+                    // Verify Challenge 2 Response
+                    if (challenge2 != Integer.parseInt(values2[0])) {
+                        throw new CannotVerifyIntegrity("Challenge 2 Response mismatch. Authentication failed.");
+                    }
+
+                    // Derive session key
+                    targetDF = KeyHandler.convertStringtoDFPubKey(values2[1]);
+                    sessionKey = KeyHandler.deriveSessionKey(dhKeyPair.getPrivate(), targetDF);
+
+                    state = State.SESSION;
+                    return "";
+            }  
+        } else { throw new UnknownSessionEstablishmentState("Wrong state!"); }
+        return "";
+    }
+
+
+    /**
+     * 1st step of session setup (Requesting side)
+     * @return
+     * @throws Exception
+     */
+    public String requestSession() throws Exception{
+        type = SetupType.REQUEST;
+        if (state != State.NO_SESSION) { System.out.println("[Restarting Session Setup]"); }
+        resetSession();
+
+        System.out.println("+ Session Setup Request (1): Source -> Dest");
+        HashMap<String, String> list = new HashMap<>();
+        list.put("Challenge 1", String.valueOf(challenge1));
+
+        state = State.PROCESSING; // Next state
+
+        return MessageManager.createListBody(list);
+    }
+}
 
 
 /**
@@ -492,4 +742,15 @@ class UnableToRegister extends Exception {
     }
 }
 
+/**
+ * Exception if Session Establishment is in progress
+ */
+class UnknownSessionEstablishmentState extends Exception {
+    public UnknownSessionEstablishmentState() {
+        super();
+    }
 
+    public UnknownSessionEstablishmentState(String m) {
+        super(m);
+    }
+}
