@@ -10,9 +10,12 @@ import java.util.HashMap;
 import java.util.Random;
 import java.util.concurrent.*;
 
+import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.KeyPair;
 import java.security.PublicKey;
@@ -195,7 +198,7 @@ public class Server {
             try {
                 out = new PrintWriter(clientSocket.getOutputStream(), true);
                 in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-                relayToClient = new MessageManager(RELAY_NAME, relayKeys.getPrivate());
+                //relayToClient = new MessageManager(RELAY_NAME, relayKeys.getPrivate());
 
                 String input; 
                 String body;
@@ -203,12 +206,46 @@ public class Server {
 
                 while ((input = in.readLine()) != null) {
                     //System.out.println("Received from " + clientID + ": " + input);
-                    
+                    System.out.println("Line 206 server");
+                    Message inputMessage;
+
                     // Encode message
                     try {
+                        System.out.println("Line 209 server");
+                        System.out.println("Testing input " + input);
                         //Message inputMessage = new Message(input);
-                        String decryptedInput = relayToClient.decodeMessage(input).toString();
-                        Message inputMessage = new Message(decryptedInput);
+                if(relayToClient == null) {
+                    System.out.println("REGI bootstrap - decrypting without signature check");
+                    
+                    String[] parts = input.split("\\|\\|");
+                    if(parts.length != 3) {
+                        throw new InvalidMessageFormat("Expected 3-part encrypted message");
+                    }
+                    
+                    String aesCiphertextB64 = parts[0];
+                    String encryptedKeyB64 = parts[1];
+                    // Skip signature verification for bootstrap
+                    
+                    byte[] encryptedKey = Base64.getDecoder().decode(encryptedKeyB64);
+                    Cipher rsaCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+                    rsaCipher.init(Cipher.DECRYPT_MODE, relayKeys.getPrivate());
+                    byte[] messageKeyBytes = rsaCipher.doFinal(encryptedKey);
+                    SecretKey messageKey = new SecretKeySpec(messageKeyBytes, "AES");
+                    
+                    byte[] aesCiphertext = Base64.getDecoder().decode(aesCiphertextB64);
+                    Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+                    aesCipher.init(Cipher.DECRYPT_MODE, messageKey);
+                    byte[] plaintextBytes = aesCipher.doFinal(aesCiphertext);
+                    String decryptedREGI = new String(plaintextBytes, StandardCharsets.UTF_8);
+                    
+                    System.out.println("REGI decrypted: " + decryptedREGI.substring(0, 100));
+                    inputMessage = new Message(decryptedREGI);
+                    clientName = inputMessage.getSender();
+                    
+                } else {
+                    String decryptedInput = relayToClient.decodeMessage(input).toString();
+                    inputMessage = new Message(decryptedInput);
+                }
 
                         // REGISTRATION
                         if(inputMessage.getOpcode() == Opcode.REGI) {
@@ -226,16 +263,23 @@ public class Server {
                             uid = Server.registerClient(clientName, encodedPublicKey);
                             System.out.println("REGI " + clientName + ": new UID " + uid);
                             
+                            PublicKey clientPubKey = uidKeyMap.get(uid);
+                            if (clientPubKey == null) {
+                                throw new UnableToRegister("Client public key not found");
+                            }
+                            relayToClient = new MessageManager(RELAY_NAME, relayKeys.getPrivate(), clientName, clientPubKey);
+
+                            // Add to the client list
+                            clients.put(clientName, this);
+
                             // Update MessageManager
-                            relayToClient.setDestination(clientName);
+                            /**relayToClient.setDestination(clientName);
+
                             if (uidKeyMap.get(uid) != null) {
                                 relayToClient.setDestPubKey(uidKeyMap.get(uid));
                             } else {
                                 throw new UnableToRegister("UID not found!");
-                            }
-
-                            // Add to the client list
-                            clients.put(clientName, this);
+                            }*/
 
                             // Send Client their UID
                             bodyList.clear();
@@ -246,7 +290,10 @@ public class Server {
                                 MessageManager.createListBody(bodyList)
                             );
 
+                            relayToClient.setSource("Relay");
+                            relayToClient.setDestination(clientName);
                             out.println(uidMessage);
+                            continue;
                             
                         } 
                         // SESSION KEY: Client to Relay

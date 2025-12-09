@@ -102,6 +102,13 @@ public class MessageManager {
     }
 
     /**
+     * Sets the source name
+     * @param source Source name
+     */
+    public void setSource(String source) {
+        this.source = source;
+    }
+    /**
      * Activates Session Mode and sets the relevant fields. 
      * @param sessionKey Session key
      * @param sessionID Identifier for current session 
@@ -232,21 +239,25 @@ public class MessageManager {
      */
     private String encryptHashRSA (String plaintext) {
         try {
+            //temporary AES key
             KeyGenerator keyGen = KeyGenerator.getInstance("AES");
             keyGen.init(128);
             SecretKey msgKey = keyGen.generateKey();
 
+            //aes cipher encryption
             Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
             aesCipher.init(Cipher.ENCRYPT_MODE, msgKey);
             byte[] plaintextBytes = plaintext.getBytes(StandardCharsets.UTF_8);
             byte[] aesCiphertext = aesCipher.doFinal(plaintextBytes);
             String aesCiphertextB64 = Base64.getEncoder().encodeToString(aesCiphertext);
 
+            //rsa encryption
             Cipher rsaCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
             rsaCipher.init(Cipher.ENCRYPT_MODE, destPubKey);
             byte[] encryptedKey = rsaCipher.doFinal(msgKey.getEncoded());
             String encryptedKeyB64 = Base64.getEncoder().encodeToString(encryptedKey);
 
+            //combine the packets to encode
             String fullPacket = aesCiphertextB64 + "||" + encryptedKeyB64;
             Signature sig = Signature.getInstance("SHA256withRSA");
             sig.initSign(srcPrivKey);
@@ -296,10 +307,9 @@ public class MessageManager {
      * @return Plaintext
      * @throws CannotVerifyIntegrity 
      */
-    private String decryptHashRSA (String ciphertext) throws CannotVerifyIntegrity {
+    String decryptHashRSA(String ciphertext) throws CannotVerifyIntegrity {
         try {
             String[] parts = ciphertext.split("\\|\\|");
-            
             if (parts.length != 3) {
                 throw new CannotVerifyIntegrity("Invalid RSA format");
             }
@@ -308,24 +318,9 @@ public class MessageManager {
             String encryptedKeyB64 = parts[1];
             String sigB64 = parts[2];
 
-            byte[] sigBytes = Base64.getDecoder().decode(sigB64);
-            String verifyPacket = aesCiphertextB64 + "||" + encryptedKeyB64;
-
-            Message tempMsg = new Message(verifyPacket);
-            String senderName = tempMsg.getSender();
-            System.out.println("Sender RSA " + senderName);
-            PublicKey senderPubKey = KeyHandler.findPublicKey(senderName);
-            Signature sig = Signature.getInstance("SHA256withRSA");
-            sig.initVerify(senderPubKey);
-            sig.update(verifyPacket.getBytes(StandardCharsets.UTF_8));
-
-            if (!sig.verify(sigBytes)) {
-                throw new CannotVerifyIntegrity("Invalid RSA signature " + senderName);
-            }
-
             byte[] encryptedKey = Base64.getDecoder().decode(encryptedKeyB64);
             Cipher rsaCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-            rsaCipher.init(Cipher.DECRYPT_MODE, srcPrivKey);
+            rsaCipher.init(Cipher.DECRYPT_MODE, srcPrivKey);   
             byte[] messageKeyBytes = rsaCipher.doFinal(encryptedKey);
             SecretKey messageKey = new SecretKeySpec(messageKeyBytes, "AES");
 
@@ -333,8 +328,27 @@ public class MessageManager {
             Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
             aesCipher.init(Cipher.DECRYPT_MODE, messageKey);
             byte[] plaintextBytes = aesCipher.doFinal(aesCiphertext);
+            String plaintext = new String(plaintextBytes, StandardCharsets.UTF_8);
+
+            Message tempMsg = new Message(plaintext);  
+            String actualSender = tempMsg.getSender(); 
             
-            return new String(plaintextBytes, StandardCharsets.UTF_8);
+            System.out.println("Verifying signature from: " + actualSender); 
+            PublicKey senderPubKey = KeyHandler.findPublicKey(actualSender);
+
+            String verifyPacket = aesCiphertextB64 + "||" + encryptedKeyB64;
+            
+            byte[] sigBytes = Base64.getDecoder().decode(sigB64);
+            Signature sig = Signature.getInstance("SHA256withRSA");
+            sig.initVerify(senderPubKey);
+            sig.update(verifyPacket.getBytes(StandardCharsets.UTF_8));
+
+            if (!sig.verify(sigBytes)) {
+                throw new CannotVerifyIntegrity("Invalid RSA signature from " + actualSender);
+            }
+
+            System.out.println("Signature verified for " + actualSender);
+            return plaintext;
 
         } catch(CannotVerifyIntegrity e) {
             throw e;

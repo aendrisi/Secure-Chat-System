@@ -79,6 +79,17 @@ public class Client {
                 return;
             }
             
+            try {
+                PublicKey relayPubKey = KeyHandler.findPublicKey(RELAY_NAME);
+                messagerToRelay.setDestPubKey(relayPubKey);
+                System.out.println("Relay public key preloaded successfully");
+            } catch(Exception e) {
+                System.out.println("Couldnt preload relay public key");
+                scan.close();
+                KeyHandler.deletePublicKey(hostName);
+                return;
+            }
+
             // STAGE 1: Registration -----------------------------------------------------------------
             System.out.println("Registering with Relay.");
             String encodedPublicKey = Base64.getEncoder().encodeToString(kp.getPublic().getEncoded());
@@ -101,6 +112,14 @@ public class Client {
             if(receivingMessage != null) {
                 String trimmedResponse = receivingMessage.trim();
                 try {
+                    PublicKey relayPubKey = KeyHandler.findPublicKey(RELAY_NAME);
+                    messagerToRelay.setDestPubKey(relayPubKey);
+                } catch(Exception e) {
+                    System.out.println("Failed to load relay public key: " + e.getMessage());
+                    return;
+                }
+
+                try {
                     Message uidResponse = messagerToRelay.decodeMessage(trimmedResponse);
                     if (uidResponse.getOpcode() == Opcode.REGI) {
                         String uidBody = uidResponse.getBody();
@@ -109,7 +128,7 @@ public class Client {
                         // Get UID
                         if (list.containsKey("UID")) {
                             uid = Integer.parseInt(list.get("UID"));
-                        } else { throw new InvalidMessageFormat(); }
+                        } //else { throw new InvalidMessageFormat(); }
 
                         System.out.println("Registration successful. UID: " + uid);
                         
