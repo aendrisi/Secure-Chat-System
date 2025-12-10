@@ -214,38 +214,55 @@ public class Server {
                         System.out.println("Line 209 server");
                         System.out.println("Testing input " + input);
                         //Message inputMessage = new Message(input);
-                if(relayToClient == null) {
-                    System.out.println("REGI bootstrap - decrypting without signature check");
-                    
-                    String[] parts = input.split("\\|\\|");
-                    if(parts.length != 3) {
-                        throw new InvalidMessageFormat("Expected 3-part encrypted message");
+                    if(relayToClient == null) {
+                        System.out.println("REGI bootstrap - decrypting without signature check");
+                        
+                        String[] parts = input.split("\\|\\|");
+                        if(parts.length != 3) {
+                            throw new InvalidMessageFormat("Expected 3-part encrypted message");
+                        }
+                        
+                        String aesCiphertextB64 = parts[0];
+                        String encryptedKeyB64 = parts[1];
+                        
+                        byte[] encryptedKey = Base64.getDecoder().decode(encryptedKeyB64);
+                        Cipher rsaCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+                        rsaCipher.init(Cipher.DECRYPT_MODE, relayKeys.getPrivate());
+                        byte[] messageKeyBytes = rsaCipher.doFinal(encryptedKey);
+                        SecretKey messageKey = new SecretKeySpec(messageKeyBytes, "AES");
+                        
+                        byte[] aesCiphertext = Base64.getDecoder().decode(aesCiphertextB64);
+                        Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+                        aesCipher.init(Cipher.DECRYPT_MODE, messageKey);
+                        byte[] plaintextBytes = aesCipher.doFinal(aesCiphertext);
+                        String decryptedREGI = new String(plaintextBytes, StandardCharsets.UTF_8);
+                        
+                        System.out.println("REGI decrypted: " + decryptedREGI.substring(0, 100));
+                        inputMessage = new Message(decryptedREGI);
+                        clientName = inputMessage.getSender();
+                        
+                    } else {
+                        String decryptedInput = relayToClient.decodeMessage(input).toString();
+                        inputMessage = new Message(decryptedInput);
                     }
-                    
-                    String aesCiphertextB64 = parts[0];
-                    String encryptedKeyB64 = parts[1];
-                    // Skip signature verification for bootstrap
-                    
-                    byte[] encryptedKey = Base64.getDecoder().decode(encryptedKeyB64);
-                    Cipher rsaCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-                    rsaCipher.init(Cipher.DECRYPT_MODE, relayKeys.getPrivate());
-                    byte[] messageKeyBytes = rsaCipher.doFinal(encryptedKey);
-                    SecretKey messageKey = new SecretKeySpec(messageKeyBytes, "AES");
-                    
-                    byte[] aesCiphertext = Base64.getDecoder().decode(aesCiphertextB64);
-                    Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-                    aesCipher.init(Cipher.DECRYPT_MODE, messageKey);
-                    byte[] plaintextBytes = aesCipher.doFinal(aesCiphertext);
-                    String decryptedREGI = new String(plaintextBytes, StandardCharsets.UTF_8);
-                    
-                    System.out.println("REGI decrypted: " + decryptedREGI.substring(0, 100));
-                    inputMessage = new Message(decryptedREGI);
-                    clientName = inputMessage.getSender();
-                    
-                } else {
-                    String decryptedInput = relayToClient.decodeMessage(input).toString();
-                    inputMessage = new Message(decryptedInput);
-                }
+
+                    if(inputMessage.getOpcode() == Opcode.SESC || inputMessage.getOpcode() == Opcode.MESG) {
+                        ClientHandler receiverHandler = Server.clients.get(inputMessage.getReceiver());
+                        String msgToReceiver = null;
+                        if(receiverHandler != null && receiverHandler.getRelayToClientManager() != null) {
+                            MessageManager relayToReceiver = receiverHandler.getRelayToClientManager();
+                            msgToReceiver = relayToReceiver.encodeMessage(
+                            inputMessage.getOpcode(),
+                            inputMessage.getSender(),
+                            inputMessage.getReceiver(),
+                            inputMessage.getBody()  
+                            );
+                        }
+
+                        receiverHandler.sendClientMessage(msgToReceiver);
+                        continue;
+
+                    }
 
                         // REGISTRATION
                         if(inputMessage.getOpcode() == Opcode.REGI) {
