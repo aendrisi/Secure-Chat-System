@@ -360,8 +360,8 @@ public class Client {
                             System.out.println("------------------------------------------------");
                             System.out.println("/help - Shows all commands");
                             System.out.println("/exit - Closes the chat");
-                            System.out.println("/expire relay - Expire session with the relay");
-                            System.out.println("/expire client - Expire session with the client");
+                            System.out.println("/expire [relay/client] - Expire session");
+                            System.out.println("/bogus [relay/client] - Send a bogus message");
                         }   
                         // Expire Relay
                         else if("/expire relay".equalsIgnoreCase(sendingMessage)){
@@ -370,6 +370,18 @@ public class Client {
                         // Expire Client
                         else if("/expire client".equalsIgnoreCase(sendingMessage)){
                             messagerToClient.resetSession();
+                        } 
+                        // Bogus Message relay
+                        else if("/bogus relay".equalsIgnoreCase(sendingMessage)){
+                            out.println("Get Bogused.");
+                        } 
+                        // Bogus Message client
+                        else if("/bogus client".equalsIgnoreCase(sendingMessage)){
+                            out.println(messagerToRelay.encodeMessage(
+                                Opcode.MESG,
+                                hostName,
+                                messagerToClient.getDestination(),
+                                "Get bogused."));
                         } 
                         else {
                             System.out.println("Unknown command. Try '/help' ?");
@@ -496,13 +508,44 @@ public class Client {
             String serverResponse; 
             try {
                 while((serverResponse = serverStream.readLine()) != null && !Thread.currentThread().isInterrupted()) {
-                    //Message serverMessage = new Message(serverResponse);
-                    Message serverMessage = messagerToRelay.decodeMessage(serverResponse);
+                    Message serverMessage;
+                    try {
+                        serverMessage = messagerToRelay.decodeMessage(serverResponse);
+                    } catch (CannotVerifyIntegrity e) {
+                        System.out.println("> Cannot verify message integrity (Replay).");
+                        clientOut.println(messagerToRelay.encodeMessage(Opcode.ERRM) );
+                        continue;
+                    } catch (Exception e) {
+                        System.out.println("> Invalid message format received (Replay).");
+                        clientOut.println(messagerToRelay.encodeMessage(Opcode.ERRM) );
+                        continue;
+                    }
 
                     // Client to Client Message
                     if (serverMessage.getOpcode() == Opcode.MESG) {
-                        Message clientMessage = messagerToClient.decodeMessage(serverMessage.getBody());
-                        System.out.println(clientMessage.getSender() + " (" + clientMessage.getTimestamp().format(timeFormat) + "): " + clientMessage.getBody());
+                        try {
+                            Message clientMessage = messagerToClient.decodeMessage(serverMessage.getBody());
+                            System.out.println(clientMessage.getSender() + " (" + clientMessage.getTimestamp().format(timeFormat) + "): " + clientMessage.getBody());
+                        } catch (CannotVerifyIntegrity e) {
+                            System.out.println("> Cannot verify message integrity (Client).");
+                            clientOut.println(
+                                messagerToRelay.encodeMessage(
+                                    Opcode.ERRM, 
+                                    messagerToClient.getSource(),
+                                    messagerToClient.getDestination(),
+                                    messagerToClient.encodeMessage(Opcode.ERRM))
+                                );
+                        } catch (Exception e) {
+                            System.out.println("> Invalid message format received (Client).");
+                            clientOut.println(
+                                messagerToRelay.encodeMessage(
+                                    Opcode.ERRM, 
+                                    messagerToClient.getSource(),
+                                    messagerToClient.getDestination(),
+                                    messagerToClient.encodeMessage(Opcode.ERRM))
+                                );
+                        }
+                        
                     } 
 
                     // Session Establishment Client-Relay
@@ -520,38 +563,32 @@ public class Client {
                                     Base64.getEncoder().encodeToString(relaySeshSetup.getKey().getEncoded()));
                                 messagerToRelay.setSession(relaySeshSetup.getKey(), uid);
                             }
-                        } else { throw new InvalidMessageFormat("Session setup with relay not requested!"); }
+                        } else { 
+                            System.out.println("> Session setup with relay not requested! Reseting session.");
+                            relaySeshSetup.resetSession();
+                            messagerToRelay.resetSession(); 
+
+                            // Request new session
+                            String sendingMessage = relaySeshSetup.requestSession();
+                            clientOut.println(messagerToRelay.encodeMessage(Opcode.SESR, sendingMessage));
+                        }
                     }
 
                     // Session Establishment Client-Client
                     else if(serverMessage.getOpcode() == Opcode.SESC) {
                         messagerToClient.resetSession();
-                        Message innerMsg = messagerToClient.decodeMessage(serverMessage.getBody());
-                        if (innerMsg.getOpcode() != Opcode.SESC) { throw new InvalidMessageFormat("Opcode mismatch"); }
+                        try {
+                            Message innerMsg = messagerToClient.decodeMessage(serverMessage.getBody());
+                            if (innerMsg.getOpcode() != Opcode.SESC) { throw new InvalidMessageFormat("Opcode mismatch"); }
 
-                        // Steps 1 and 2
-                        if (clientSeshSetup.getState() != SessionSetup.State.PROCESSING) {
-                            // RESPONSE - 1. SRC <- DST: Challenge 1
-                            // REQUEST  - 2. DST -> SRC: Challenge 1 Response, Challenge 2, DF Value
-                            String msgString = clientSeshSetup.nextStep(MessageManager.readListBody(innerMsg.getBody())); 
+                            // Steps 1 and 2
+                            if (clientSeshSetup.getState() != SessionSetup.State.PROCESSING) {
+                                // RESPONSE - 1. SRC <- DST: Challenge 1
+                                // REQUEST  - 2. DST -> SRC: Challenge 1 Response, Challenge 2, DF Value
+                                String msgString = clientSeshSetup.nextStep(MessageManager.readListBody(innerMsg.getBody())); 
 
-                            // RESPONSE - 2. SRC -> DST: Challenge 1 Response, Challenge 2, D-F Public Values
-                            // REQUEST -  3. SRC -> DST: Challenge 2 Response, DF Value
-                            clientOut.println(
-                                messagerToRelay.encodeMessage(
-                                    Opcode.SESC, 
-                                    messagerToClient.getSource(),
-                                    messagerToClient.getDestination(),
-                                    messagerToClient.encodeMessage(Opcode.SESC, msgString)
-                                )
-                            );
-                        }
-                        // Step 3
-                        else {
-                            // RESPONSE - 3. SRC <- DST: Challenge 2 response, DF Value
-                            String msgString = clientSeshSetup.nextStep(MessageManager.readListBody(innerMsg.getBody()));
-                        
-                            if (msgString.length() > 0) {
+                                // RESPONSE - 2. SRC -> DST: Challenge 1 Response, Challenge 2, D-F Public Values
+                                // REQUEST -  3. SRC -> DST: Challenge 2 Response, DF Value
                                 clientOut.println(
                                     messagerToRelay.encodeMessage(
                                         Opcode.SESC, 
@@ -561,39 +598,82 @@ public class Client {
                                     )
                                 );
                             }
-                        }
+                            // Step 3
+                            else {
+                                // RESPONSE - 3. SRC <- DST: Challenge 2 response, DF Value
+                                String msgString = clientSeshSetup.nextStep(MessageManager.readListBody(innerMsg.getBody()));
+                            
+                                if (msgString.length() > 0) {
+                                    clientOut.println(
+                                        messagerToRelay.encodeMessage(
+                                            Opcode.SESC, 
+                                            messagerToClient.getSource(),
+                                            messagerToClient.getDestination(),
+                                            messagerToClient.encodeMessage(Opcode.SESC, msgString)
+                                        )
+                                    );
+                                }
+                            }
 
-                        if (clientSeshSetup.getState() == SessionSetup.State.SESSION) {
-                            // Derive Key
-                                if (clientSeshSetup.getKey() != null) {
-                                    System.out.println("> Client-Client Key: " + Base64.getEncoder().encodeToString(clientSeshSetup.getKey().getEncoded()));
-                                    messagerToClient.setSession(clientSeshSetup.getKey(), uid);
-                                } else { throw new UnknownSessionEstablishmentState("Session not set up!"); }
+                            if (clientSeshSetup.getState() == SessionSetup.State.SESSION) {
+                                // Derive Key
+                                    if (clientSeshSetup.getKey() != null) {
+                                        System.out.println("> Client-Client Key: " + Base64.getEncoder().encodeToString(clientSeshSetup.getKey().getEncoded()));
+                                        messagerToClient.setSession(clientSeshSetup.getKey(), uid);
+                                    } else { throw new UnknownSessionEstablishmentState("Session not set up!"); }
+                            }
+                        } catch (UnknownSessionEstablishmentState | CannotVerifyIntegrity | InvalidMessageFormat e) {
+                            System.out.println("> Error in session setup with client. Restarting session setup");
+                            clientSeshSetup.resetSession();
+                            messagerToClient.resetSession(); 
+
+                            // Request new session
+                            String sendingMessage = clientSeshSetup.requestSession();
+                            clientOut.println(
+                                    messagerToRelay.encodeMessage(
+                                        Opcode.SESC, 
+                                        messagerToClient.getSource(),
+                                        messagerToClient.getDestination(),
+                                        messagerToClient.encodeMessage(Opcode.SESC, sendingMessage)
+                                    )
+                                );
                         }
+                        
                     }
                     
                     // Error: Session Key with Relay Expired/Invalid
                     else if (serverMessage.getOpcode() == Opcode.ERSR) {
                         messagerToRelay.resetSession();
                         relaySeshSetup.resetSession();
-                        System.out.println("> Session key with relay expired/invalid");
+                        System.out.println("[Session key with relay expired/invalid]");
                     }
 
                     // Error: Session Key with Recipient Client Expired/Invalid
                     else if (serverMessage.getOpcode() == Opcode.ERSC) {
                         messagerToClient.resetSession();
                         clientSeshSetup.resetSession();
-                        System.out.println("> Session key with client expired/invalid");
+                        System.out.println("[Session key with client expired/invalid]");
                     }
 
                     // Error: Message Invalid
                     else if (serverMessage.getOpcode() == Opcode.ERRM) {
-                        System.out.println("> Message invalid");
-                        try {
-                            System.out.println(serverMessage.getBody());
-                        } catch(Exception ignore) {
-                            //ignore the invalid message?
+                        // Client Invalid
+                        if (serverMessage.getSize() > 0) {
+                            try {
+                                Message clientMessage = messagerToClient.decodeMessage(serverMessage.getBody());
+                                if (clientMessage.getOpcode() == Opcode.ERRM) {
+                                    System.out.println("< Message to Client Invalid");
+                                } else {System.out.println("< Message to Relay Invalid");}
+                                
+                            } catch (Exception e) {
+                                System.out.println("> Message to Relay Invalid");
+                            }
                         }
+                        // Relay Invalid
+                        else {
+                            System.out.println("> Message to Relay Invalid");
+                        }
+                        
                     }
 
                     // Error: Recipient Not Found

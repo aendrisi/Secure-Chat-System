@@ -401,13 +401,13 @@ public class MessageManager {
                 throw new CannotVerifyIntegrity("Invalid RSA signature from " + destination);
             }
 
-            System.out.println("Signature verified for " + destination);
+            //System.out.println("Signature verified for " + destination);
             return plaintext;
 
         } catch(CannotVerifyIntegrity e) {
             throw e;
         } catch(Exception e) {
-            e.printStackTrace();
+            //e.printStackTrace();
             throw new CannotVerifyIntegrity("decryptHashRSA failed: " + e.getMessage());
         }
     }
@@ -464,12 +464,12 @@ public class MessageManager {
             return new String(plaintextBytes, StandardCharsets.UTF_8);
 
         } catch(CannotVerifyIntegrity e) {
-            e.printStackTrace();
+            //e.printStackTrace();
             throw e;
         } catch(IllegalArgumentException e) {
             throw e;
         } catch(Exception e) {
-            e.printStackTrace();
+            //e.printStackTrace();
             throw new CannotVerifyIntegrity("decryptHashSession failed " + e.getMessage());
         }
     }
