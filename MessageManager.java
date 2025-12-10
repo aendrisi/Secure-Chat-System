@@ -31,6 +31,8 @@ public class MessageManager {
     private static final String BODY_SEPERATOR = "###";
     private static final String VALUE_SEPERATOR = ": ";
 
+    private final int KEY_IV_ENCODED_SIZE = 172;
+
     private String source;
     private String destination;
    
@@ -213,7 +215,6 @@ public class MessageManager {
         else { return encryptHashRSA(message.toString()); }
     }
 
-    //%%% INCOMPLETE %%%//
     /**
      * Parses and decodes the given message and returns the message object
      * @param data
@@ -222,12 +223,27 @@ public class MessageManager {
      */
     public Message decodeMessage(String data) throws Exception{
         String decryptData;
+        //System.out.println(source + " -> " + destination + ": " + sessionMode);
+
         if (sessionMode) {
-            decryptData = decryptHashSession(data);
+            try {
+                decryptData = decryptHashSession(data);
+            } catch (Exception e) {
+                resetSession();
+                decryptData = decryptHashRSA(data);
+            }
+            
         }
         else { decryptData = decryptHashRSA(data); }
 
         Message message = new Message(decryptData);
+        
+        // Set up public keys!
+        if (message.getOpcode() == Opcode.REGI && this.destPubKey == null) {
+            this.destination = message.getSender();
+            this.destPubKey = KeyHandler.findPublicKey(message.getSender());
+        }
+
         return message;
     }
 
@@ -241,38 +257,46 @@ public class MessageManager {
         try {
             //temporary AES key
             KeyGenerator keyGen = KeyGenerator.getInstance("AES");
-            keyGen.init(128);
+            keyGen.init(256);
             SecretKey msgKey = keyGen.generateKey();
 
-            //aes cipher encryption
-            Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-            aesCipher.init(Cipher.ENCRYPT_MODE, msgKey);
+            //encrypted data (temp key)
+            Cipher aesCipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+            SecureRandom IVrandomizer = new SecureRandom();
+            aesCipher.init(Cipher.ENCRYPT_MODE, msgKey, IVrandomizer);
             byte[] plaintextBytes = plaintext.getBytes(StandardCharsets.UTF_8);
             byte[] aesCiphertext = aesCipher.doFinal(plaintextBytes);
             String aesCiphertextB64 = Base64.getEncoder().encodeToString(aesCiphertext);
 
-            //rsa encryption
-            Cipher rsaCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+            //encrypted temp key (pub key) - 172 chars
+            Cipher rsaCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding ");
             rsaCipher.init(Cipher.ENCRYPT_MODE, destPubKey);
             byte[] encryptedKey = rsaCipher.doFinal(msgKey.getEncoded());
             String encryptedKeyB64 = Base64.getEncoder().encodeToString(encryptedKey);
 
-            //combine the packets to encode
-            String fullPacket = aesCiphertextB64 + "||" + encryptedKeyB64;
+            //encrypted IV (pub key) - 172 chars
+            byte[] encryptedIV = rsaCipher.doFinal(aesCipher.getIV());
+            String encryptedIVB64 = Base64.getEncoder().encodeToString(encryptedIV);
+
+            // Packet Data = [Temp Key] [IV] [Data] 
+            String packetData = encryptedKeyB64 + encryptedIVB64 + aesCiphertextB64;
+
+            //hash of  encrypted data (digital signature - priv key)
             Signature sig = Signature.getInstance("SHA256withRSA");
             sig.initSign(srcPrivKey);
-            sig.update(fullPacket.getBytes(StandardCharsets.UTF_8));
+            sig.update(packetData.getBytes(StandardCharsets.UTF_8));
             byte[] sigBytes = sig.sign();
             String sigB64 = Base64.getEncoder().encodeToString(sigBytes);
 
-            return fullPacket + "||" + sigB64;
+            //combine the packets to send
+            // {[Temp Key] [IV] [Data]} [Sign]
+            return packetData + sigB64;
 
         } catch (Exception e) {
             throw new RuntimeException("encryptHashRSA failed", e); 
         }
     }
 
-    //%%% INCOMPLETE %%%//
     /**
      * Encrypts with shared secret key and adds an HMAC to the given plaintext.
      * @param plaintext Plaintext
@@ -280,20 +304,36 @@ public class MessageManager {
      */
     private String encryptHashSession (String plaintext) {
         try {
-            Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-            cipher.init(Cipher.ENCRYPT_MODE, sessionKey);
+            // {[IV] [Data]} [HMAC]
+
+            //encrypted data (session key)
+            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+            cipher.init(Cipher.ENCRYPT_MODE, sessionKey, new SecureRandom());
             byte[] plainTextBytes = plaintext.getBytes(StandardCharsets.UTF_8);
             byte[] ciphertextBytes = cipher.doFinal(plainTextBytes);
+            String ciphertextB64 = Base64.getEncoder().encodeToString(ciphertextBytes);
 
+            //encrypted IV (pub key) - 172 chars
+            Cipher ivCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+            ivCipher.init(Cipher.ENCRYPT_MODE, sessionKey);
+            byte[] encryptedIV = ivCipher.doFinal(cipher.getIV());
+            String encryptedIVB64 = Base64.getEncoder().encodeToString(encryptedIV);
+
+            //combine IV + data
+            byte[] data = new byte[encryptedIV.length + ciphertextBytes.length];
+            System.arraycopy(encryptedIV, 0, data, 0, encryptedIV.length);
+            System.arraycopy(ciphertextBytes, 0, data, encryptedIV.length, ciphertextBytes.length);
+
+            //generate HMAC
             Mac hmac = Mac.getInstance("HmacSHA256");
             hmac.init(new SecretKeySpec(sessionKey.getEncoded(), "HmacSHA256"));
-            byte[] hmacBytes = hmac.doFinal(ciphertextBytes);
+            byte[] hmacBytes = hmac.doFinal(data);
             String hmacB64 = Base64.getEncoder().encodeToString(hmacBytes);
-            String encryptedB64 = Base64.getEncoder().encodeToString(ciphertextBytes);
 
-            return encryptedB64 + "||" + hmacB64;
+            return encryptedIVB64 + ciphertextB64 + hmacB64;
 
         } catch (Exception e) {
+            e.printStackTrace();
             throw new RuntimeException("encryptHashSession failed", e); 
         }
 
@@ -309,55 +349,70 @@ public class MessageManager {
      */
     String decryptHashRSA(String ciphertext) throws CannotVerifyIntegrity {
         try {
-            String[] parts = ciphertext.split("\\|\\|");
-            if (parts.length != 3) {
-                throw new CannotVerifyIntegrity("Invalid RSA format");
-            }
+            // {[Temp Key] [IV] [Data]} [Sign]
+            String encryptedKeyB64 = ciphertext.substring(0, KEY_IV_ENCODED_SIZE); // TEMP KEY
+            String encryptedIVB64 = ciphertext.substring(KEY_IV_ENCODED_SIZE, 2 * KEY_IV_ENCODED_SIZE); // IV
+            String encryptedData = ciphertext.substring(2 * KEY_IV_ENCODED_SIZE, ciphertext.length() - KEY_IV_ENCODED_SIZE); // DATA
+            String signature = ciphertext.substring(ciphertext.length() - KEY_IV_ENCODED_SIZE); // SIGN
 
-            String aesCiphertextB64 = parts[0];
-            String encryptedKeyB64 = parts[1];
-            String sigB64 = parts[2];
+            Cipher rsaCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding ");
+            Cipher aesCipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
 
+            // Decrypt Key
             byte[] encryptedKey = Base64.getDecoder().decode(encryptedKeyB64);
-            Cipher rsaCipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
             rsaCipher.init(Cipher.DECRYPT_MODE, srcPrivKey);   
             byte[] messageKeyBytes = rsaCipher.doFinal(encryptedKey);
-            SecretKey messageKey = new SecretKeySpec(messageKeyBytes, "AES");
+            SecretKey messageKey = new SecretKeySpec(
+                Arrays.copyOfRange(messageKeyBytes, messageKeyBytes.length - 32, messageKeyBytes.length),
+                "AES");
 
-            byte[] aesCiphertext = Base64.getDecoder().decode(aesCiphertextB64);
-            Cipher aesCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-            aesCipher.init(Cipher.DECRYPT_MODE, messageKey);
-            byte[] plaintextBytes = aesCipher.doFinal(aesCiphertext);
-            String plaintext = new String(plaintextBytes, StandardCharsets.UTF_8);
+            // Decrypt IV
+            byte[] encryptedIV = Base64.getDecoder().decode(encryptedIVB64);
+            rsaCipher.init(Cipher.DECRYPT_MODE, srcPrivKey);   
+            byte[] messageIVBytes = rsaCipher.doFinal(encryptedIV);
+            IvParameterSpec ivSpec = new IvParameterSpec(
+                Arrays.copyOfRange(messageIVBytes, messageIVBytes.length - 16, messageIVBytes.length));
 
+            // Decrypt Data
+            byte[] dataPlaintext = Base64.getDecoder().decode(encryptedData);
+            aesCipher.init(Cipher.DECRYPT_MODE, messageKey, ivSpec);
+            byte[] dataPlaintextBytes = aesCipher.doFinal(dataPlaintext);
+            String plaintext = new String(dataPlaintextBytes, StandardCharsets.UTF_8);
+
+            // Verify Packet Size
             Message tempMsg = new Message(plaintext);  
-            String actualSender = tempMsg.getSender(); 
+            if (plaintext.length() != tempMsg.getExpectedMessageSize()) {
+                throw new InvalidMessageFormat("Message size mismatch.");
+            }
             
-            System.out.println("Verifying signature from: " + actualSender); 
-            PublicKey senderPubKey = KeyHandler.findPublicKey(actualSender);
-
-            String verifyPacket = aesCiphertextB64 + "||" + encryptedKeyB64;
-            
-            byte[] sigBytes = Base64.getDecoder().decode(sigB64);
-            Signature sig = Signature.getInstance("SHA256withRSA");
-            sig.initVerify(senderPubKey);
-            sig.update(verifyPacket.getBytes(StandardCharsets.UTF_8));
-
-            if (!sig.verify(sigBytes)) {
-                throw new CannotVerifyIntegrity("Invalid RSA signature from " + actualSender);
+            // Verifying Signature
+            if (destPubKey == null) {
+                destPubKey = KeyHandler.findPublicKey(tempMsg.getSender());
             }
 
-            System.out.println("Signature verified for " + actualSender);
+            String packetData =  encryptedKeyB64 + encryptedIVB64 + encryptedData;
+            
+            byte[] sigBytes = Base64.getDecoder().decode(signature);
+            Signature sig = Signature.getInstance("SHA256withRSA");
+            sig.initVerify(destPubKey);
+            sig.update(packetData.getBytes(StandardCharsets.UTF_8));
+
+            if (!sig.verify(sigBytes)) {
+                throw new CannotVerifyIntegrity("Invalid RSA signature from " + destination);
+            }
+
+            System.out.println("Signature verified for " + destination);
             return plaintext;
 
         } catch(CannotVerifyIntegrity e) {
             throw e;
         } catch(Exception e) {
+            e.printStackTrace();
             throw new CannotVerifyIntegrity("decryptHashRSA failed: " + e.getMessage());
         }
     }
+    
 
-    //%%% INCOMPLETE %%%//
     /**
      * Decrypts the given plaintext with a shared secret key and verifies the 
      * integrity of the message.
@@ -367,34 +422,54 @@ public class MessageManager {
      */
     private String decryptHashSession (String ciphertext) throws CannotVerifyIntegrity {
         try {
-            String[] parts = ciphertext.split("\\|\\|");
-            if(parts.length != 2) {
-                throw new CannotVerifyIntegrity("Invalid HMAC format");
+            // {[Temp Key] [IV] [Data]} [Sign]
+            int ivHmacSize = 44;
+            int cipherLen = ciphertext.length();
+
+            // Get values
+            String encryptedIVB64 = ciphertext.substring(0, ivHmacSize);
+            String ciphertextB64 = ciphertext.substring(ivHmacSize, cipherLen - ivHmacSize);
+            String hmacB64 = ciphertext.substring(cipherLen - ivHmacSize);
+
+            byte[] ciphertextBytes = Base64.getDecoder().decode(ciphertextB64);
+            byte[] encryptedIV = Base64.getDecoder().decode(encryptedIVB64);
+            byte[] hmacBytes = Base64.getDecoder().decode(hmacB64);
+
+            // Combine IV + data
+            byte[] data = new byte[encryptedIV.length + ciphertextBytes.length];
+            System.arraycopy(encryptedIV, 0, data, 0, encryptedIV.length);
+            System.arraycopy(ciphertextBytes, 0, data, encryptedIV.length, ciphertextBytes.length);
+
+            // Check HMAC
+            Mac hmac = Mac.getInstance("HmacSHA256");
+            hmac.init(new SecretKeySpec(sessionKey.getEncoded(), "HmacSHA256"));
+            byte[] computedHmac = hmac.doFinal(data);
+
+            if (!Arrays.equals(computedHmac, hmacBytes)) {
+                throw new CannotVerifyIntegrity("HMAC verification failed");
             }
 
-        String encryptedB64 = parts[0];
-        String receivedHmacB64 = parts[1];
+            // Decrypt IV
+            Cipher ivCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+            ivCipher.init(Cipher.DECRYPT_MODE, sessionKey);   
+            byte[] messageIVBytes = ivCipher.doFinal(encryptedIV);
+            IvParameterSpec ivSpec = new IvParameterSpec(
+                Arrays.copyOfRange(messageIVBytes, messageIVBytes.length - 16, messageIVBytes.length));
 
-        byte[] ciphertextBytes = Base64.getDecoder().decode(encryptedB64);
-        byte[] receivedHmac = Base64.getDecoder().decode(receivedHmacB64);
+            // Decrypt Ciphertext
+            Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+            cipher.init(Cipher.DECRYPT_MODE, sessionKey, ivSpec);
+            byte[] plaintextBytes = cipher.doFinal(ciphertextBytes);
 
-        Mac hmac = Mac.getInstance("HmacSHA256");
-        hmac.init(new SecretKeySpec(sessionKey.getEncoded(), "HmacSHA256"));
-        byte[] computedHmac = hmac.doFinal(ciphertextBytes);
-
-        if (!Arrays.equals(computedHmac, receivedHmac)) {
-            throw new CannotVerifyIntegrity("HMAC verification failed");
-        }
-
-        Cipher cipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-        cipher.init(Cipher.DECRYPT_MODE, sessionKey);
-        byte[] plaintextBytes = cipher.doFinal(ciphertextBytes);
-
-        return new String(plaintextBytes, StandardCharsets.UTF_8);
+            return new String(plaintextBytes, StandardCharsets.UTF_8);
 
         } catch(CannotVerifyIntegrity e) {
+            e.printStackTrace();
+            throw e;
+        } catch(IllegalArgumentException e) {
             throw e;
         } catch(Exception e) {
+            e.printStackTrace();
             throw new CannotVerifyIntegrity("decryptHashSession failed " + e.getMessage());
         }
     }

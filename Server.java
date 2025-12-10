@@ -198,7 +198,7 @@ public class Server {
             try {
                 out = new PrintWriter(clientSocket.getOutputStream(), true);
                 in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-                //relayToClient = new MessageManager(RELAY_NAME, relayKeys.getPrivate());
+                relayToClient = new MessageManager(RELAY_NAME, relayKeys.getPrivate());
 
                 String input; 
                 String body;
@@ -206,15 +206,15 @@ public class Server {
 
                 while ((input = in.readLine()) != null) {
                     //System.out.println("Received from " + clientID + ": " + input);
-                    System.out.println("Line 206 server");
+                    //System.out.println("Line 206 server");
                     Message inputMessage;
 
                     // Encode message
                     try {
-                        System.out.println("Line 209 server");
-                        System.out.println("Testing input " + input);
+                        //System.out.println("Line 209 server");
+                        //System.out.println("Testing input " + input);
                         //Message inputMessage = new Message(input);
-                    if(relayToClient == null) {
+                    /*if(relayToClient == null) {
                         System.out.println("REGI bootstrap - decrypting without signature check");
                         
                         String[] parts = input.split("\\|\\|");
@@ -241,10 +241,10 @@ public class Server {
                         inputMessage = new Message(decryptedREGI);
                         clientName = inputMessage.getSender();
                         
-                    } else {
+                    } else { */
                         String decryptedInput = relayToClient.decodeMessage(input).toString();
                         inputMessage = new Message(decryptedInput);
-                    }
+                    //}
 
                     if(inputMessage.getOpcode() == Opcode.SESC || inputMessage.getOpcode() == Opcode.MESG) {
                         ClientHandler receiverHandler = Server.clients.get(inputMessage.getReceiver());
@@ -319,6 +319,7 @@ public class Server {
                             body = inputMessage.getBody();
                             if (stateSESR == Stages.STAGE1) {
                                 // 1. Client -> Relay: Challenge 1
+                                relayToClient.resetSession(); 
                                 System.out.println("- SESR " + clientName + " (1): Client -> Relay");
                                 bodyList = MessageManager.readListBody(body);
 
@@ -345,7 +346,6 @@ public class Server {
                                 
                                 // Set State
                                 stateSESR = Stages.STAGE2; 
-                                relayToClient.resetSession(); 
                             } 
                             // 3. Client -> Relay: Challenge 2 response, DF Value
                             else {

@@ -172,7 +172,7 @@ public class KeyHandler {
         keyAgreement.init(userKey);
         keyAgreement.doPhase(targetKey, true); 
         byte[] sharedSecretBytes = keyAgreement.generateSecret();
-        return new SecretKeySpec(Arrays.copyOf(sharedSecretBytes, 16), "AES");
+        return new SecretKeySpec(Arrays.copyOf(sharedSecretBytes, 32), "AES");
         //return new SecretKeySpec(sharedSecretBytes, 0, sharedSecretBytes.length, "AES");
     }
 

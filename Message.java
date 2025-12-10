@@ -171,6 +171,29 @@ public class Message {
     }
 
     /**
+     * Returns the expected size of the message
+     * @return Size of entire message
+     */
+    public int getExpectedMessageSize() {
+        String headers = 
+            "Opcode: " + opcode.name() + HEADER_SEPERATOR +
+            "Sender: " + sender + HEADER_SEPERATOR +
+            "Receiver: " + receiver + HEADER_SEPERATOR +
+            "Timestamp: " + timestamp + HEADER_SEPERATOR +
+            "Size: " + size + HEADER_SEPERATOR;
+
+            if (sessionID > 0) {
+                headers += "SessionID: " + sessionID + HEADER_SEPERATOR;
+            }
+
+            if (size > 0) {
+                headers += "Body: ";
+            }
+
+        return headers.length() + size;
+    }
+
+    /**
      * Returns the opcode of the message. 
      * @return Opcode
      */

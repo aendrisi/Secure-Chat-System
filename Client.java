@@ -215,7 +215,7 @@ public class Client {
                 if (in.ready()) {
                     // 1. SRC <- DST: Challenge 1
                     String msgString = in.readLine().trim();
-                    Message outerMsg = messagerToClient.decodeMessage(msgString);
+                    Message outerMsg = messagerToRelay.decodeMessage(msgString);
                     if (outerMsg.getOpcode() != Opcode.SESC) { throw new InvalidMessageFormat(); }
                     Message innerMsg = messagerToClient.decodeMessage(outerMsg.getBody());
                     if (innerMsg.getOpcode() != Opcode.SESC) { throw new InvalidMessageFormat(); }
@@ -233,7 +233,7 @@ public class Client {
 
                     // 3. SRC <- DST: Challenge 2 response, DF Value
                     msgString = in.readLine().trim();
-                    outerMsg = messagerToClient.decodeMessage(msgString);
+                    outerMsg = messagerToRelay.decodeMessage(msgString);
                     if (outerMsg.getOpcode() != Opcode.SESC) { throw new InvalidMessageFormat(); }
                     innerMsg = messagerToClient.decodeMessage(outerMsg.getBody());
                     if (innerMsg.getOpcode() != Opcode.SESC) { throw new InvalidMessageFormat(); }
@@ -256,7 +256,7 @@ public class Client {
 
                     // 2. DST -> SRC: Challenge 1 Response, Challenge 2, DF Value
                     msgStr = in.readLine();
-                    Message outerMsg = messagerToClient.decodeMessage(msgStr);
+                    Message outerMsg = messagerToRelay.decodeMessage(msgStr);
                     if (outerMsg.getOpcode() != Opcode.SESC) { throw new InvalidMessageFormat(); }
                     Message innerMsg = messagerToClient.decodeMessage(outerMsg.getBody());
                     if (innerMsg.getOpcode() != Opcode.SESC) { throw new InvalidMessageFormat(); }
@@ -283,10 +283,13 @@ public class Client {
 
             } catch(UnknownSessionEstablishmentState | CannotVerifyIntegrity | InvalidMessageFormat e) {
                 //System.out.println("Attempting to reestablish client session");
-                e.printStackTrace();
                 System.out.println("Error: Unable to establish session with " + messageHandler.getName());
-            } catch (Exception e) {
                 e.printStackTrace();
+                return;
+            } catch (Exception e) {
+                System.out.println("Error: Unable to establish session with " + messageHandler.getName());
+                e.printStackTrace();
+                return;
             }
 
             // ====================================== Messaging =============================================
@@ -522,6 +525,7 @@ public class Client {
 
                     // Session Establishment Client-Client
                     else if(serverMessage.getOpcode() == Opcode.SESC) {
+                        messagerToClient.resetSession();
                         Message innerMsg = messagerToClient.decodeMessage(serverMessage.getBody());
                         if (innerMsg.getOpcode() != Opcode.SESC) { throw new InvalidMessageFormat("Opcode mismatch"); }
 
